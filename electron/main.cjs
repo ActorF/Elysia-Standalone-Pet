@@ -1,0 +1,277 @@
+// Independent transparent Electron host. Character animation lives entirely in the local renderer.
+'use strict';
+const { app, BrowserWindow, Menu, Tray, nativeImage, screen, ipcMain, globalShortcut, session } = require('electron');
+const fs = require('node:fs');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+const { spawn } = require('node:child_process');
+const { DEFAULT_SETTINGS, EXPRESSION_KEYS, sanitizeSettings, dimensions, fitBounds, pointerPayload, actionForKey, isLocalResource } = require('./host-policy.cjs');
+const { trayPng } = require('./tray-icon.cjs');
+
+const root = path.resolve(__dirname, '..');
+const rendererUrl = pathToFileURL(path.join(root, 'renderer', 'index.html')).href;
+const smokeNativeHotkeys = process.argv.includes('--smoke-native-hotkeys');
+const isSmokeTest = process.argv.includes('--smoke-test') || smokeNativeHotkeys;
+if (isSmokeTest) app.setPath('userData', path.join(app.getPath('temp'), 'elysia-pet-host-smoke'));
+let pet, tray, settingsFile, pointerTimer, saveTimer, dragOrigin, legacyProcess;
+let preferences = { ...DEFAULT_SETTINGS };
+let savedPosition = null;
+let quitting = false;
+const hotkeys = { legacy: { active: false, error: null }, alternate: { active: false, failed: [] }, recovery: false };
+
+function state() { return { settings: { ...preferences }, hotkeys: structuredClone(hotkeys) }; }
+function send(channel, data) {
+  if (pet && !pet.isDestroyed() && !pet.webContents.isDestroyed()) pet.webContents.send(channel, data);
+}
+function publishSettings() { send('pet:settings', state()); }
+function action(typeOrAction) { send('pet:action', typeof typeOrAction === 'string' ? { type: typeOrAction } : typeOrAction); }
+function saveSettings() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    if (!settingsFile) return;
+    try {
+      const bounds = pet && !pet.isDestroyed() ? pet.getBounds() : savedPosition;
+      const payload = { settings: preferences, position: bounds ? { x: bounds.x, y: bounds.y } : null };
+      fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
+      fs.writeFileSync(settingsFile + '.tmp', JSON.stringify(payload, null, 2));
+      fs.renameSync(settingsFile + '.tmp', settingsFile);
+    } catch (error) { console.error('Could not save pet preferences:', error.message); }
+  }, 120);
+}
+function loadSettings() {
+  try {
+    const stored = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+    preferences = sanitizeSettings(stored.settings);
+    if (stored.position && Number.isFinite(stored.position.x) && Number.isFinite(stored.position.y)) savedPosition = stored.position;
+  } catch { /* First start or invalid preferences uses safe defaults. */ }
+  // A fresh launch is always interactive; the tray can re-enable click-through.
+  preferences.clickThrough = false;
+}
+function recover(showControls = true) {
+  if (!pet || pet.isDestroyed()) return;
+  updateSettings({ clickThrough: false });
+  if (pet.isMinimized()) pet.restore();
+  pet.show();
+  pet.focus();
+  if (showControls) action('show-controls');
+}
+function updateSettings(patch) {
+  const previous = preferences;
+  preferences = sanitizeSettings(patch && typeof patch === 'object' ? patch : {}, preferences);
+  if (pet && !pet.isDestroyed()) {
+    pet.setAlwaysOnTop(preferences.alwaysOnTop, 'floating');
+    pet.setIgnoreMouseEvents(preferences.clickThrough, { forward: true });
+    if (preferences.scale !== previous.scale) {
+      const old = pet.getBounds();
+      const size = dimensions(preferences.scale);
+      const bounds = { ...size, x: old.x + old.width - size.width, y: old.y + old.height - size.height };
+      pet.setBounds(fitBounds(bounds, screen.getDisplayMatching(bounds).workArea));
+    }
+  }
+  if (preferences.legacyHotkeys !== previous.legacyHotkeys) configureLegacyHotkeys();
+  if (preferences.alternateHotkeys !== previous.alternateHotkeys) configureAlternateHotkeys();
+  saveSettings();
+  publishSettings();
+  return state();
+}
+
+function configureLegacyHotkeys() {
+  const previousProcess = legacyProcess;
+  legacyProcess = null;
+  if (previousProcess) previousProcess.kill();
+  hotkeys.legacy = { active: false, error: null };
+  if (!preferences.legacyHotkeys) { publishSettings(); return; }
+  if (process.platform !== 'win32') {
+    hotkeys.legacy.error = '原版 Space 组合键仅支持 Windows；可启用备用快捷键。';
+    publishSettings(); return;
+  }
+  let script = path.join(__dirname, 'legacy-hotkeys.ps1');
+  if (app.isPackaged) script = script.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
+  const child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-ParentProcessId', String(process.pid)], {
+    windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  legacyProcess = child;
+  let pending = '';
+  let failure = '';
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (text) => {
+    if (legacyProcess !== child) return;
+    pending += text;
+    const lines = pending.split(/\r?\n/); pending = lines.pop();
+    for (const line of lines) {
+      if (line.trim() === 'READY') {
+        hotkeys.legacy = { active: true, error: null }; publishSettings(); continue;
+      }
+      const mapped = actionForKey(line.trim());
+      if (mapped) action(mapped);
+    }
+    if (pending.length > 1024) pending = '';
+  });
+  child.stderr.on('data', (text) => { failure = (failure + text).slice(-2000); });
+  child.on('error', () => {
+    if (legacyProcess !== child) return;
+    hotkeys.legacy = { active: false, error: '无法启动原版快捷键监听；可启用备用快捷键。' }; publishSettings();
+  });
+  child.on('exit', (code) => {
+    if (legacyProcess !== child || quitting) return;
+    legacyProcess = null;
+    hotkeys.legacy = { active: false, error: `原版快捷键监听已停止（${code ?? 'unknown'}）${failure ? '，请启用备用快捷键。' : '。'}` };
+    publishSettings();
+  });
+}
+
+const alternateBindings = [];
+function configureAlternateHotkeys() {
+  for (const binding of alternateBindings.splice(0)) globalShortcut.unregister(binding);
+  hotkeys.alternate = { active: false, failed: [] };
+  if (!preferences.alternateHotkeys) return;
+  for (const key of [...Object.keys(EXPRESSION_KEYS), 'M', 'Backspace']) {
+    const accelerator = `CommandOrControl+Alt+${key}`;
+    try {
+      if (globalShortcut.register(accelerator, () => action(actionForKey(key)))) alternateBindings.push(accelerator);
+      else hotkeys.alternate.failed.push(accelerator);
+    } catch { hotkeys.alternate.failed.push(accelerator); }
+  }
+  hotkeys.alternate.active = alternateBindings.length > 0;
+}
+
+const labels = {
+  glasses: '眼镜', blush: '脸红', angry: '生气', sleep: '困困', surprise: '惊讶',
+  squint: '眯眼', dizzy: '晕晕', wink: '眨眼', cry: '哭哭', heart: '爱心眼',
+  star: '星星眼', smile: '微笑', cat: '猫猫', cake: '蛋糕', tea: '奶茶', awkward: '尴尬', pat: '摸头',
+};
+function buildMenu() {
+  return Menu.buildFromTemplate([
+    { label: '显示 / 恢复操作 (Ctrl+Alt+P)', click: () => recover() },
+    { label: '表情说明与设置', click: () => { recover(false); action('show-controls'); } },
+    { label: '喇叭 (Space+M)', click: () => action('toggle-megaphone') },
+    { label: '重置表情 (Space+Backspace)', click: () => action('reset') },
+    { label: '表情', submenu: Object.entries(EXPRESSION_KEYS).map(([key, id]) => ({ label: `${labels[id]}  Space+${key}`, click: () => action({ type: 'expression', id }) })) },
+    { type: 'separator' },
+    { label: '始终置顶', type: 'checkbox', checked: preferences.alwaysOnTop, click: (item) => updateSettings({ alwaysOnTop: item.checked }) },
+    { label: '点击穿透（托盘或 Ctrl+Alt+P 恢复）', type: 'checkbox', checked: preferences.clickThrough, click: (item) => updateSettings({ clickThrough: item.checked }) },
+    { label: '原版 Space 全局组合键', type: 'checkbox', checked: preferences.legacyHotkeys, click: (item) => updateSettings({ legacyHotkeys: item.checked }) },
+    { label: '备用 Ctrl+Alt 全局组合键', type: 'checkbox', checked: preferences.alternateHotkeys, click: (item) => updateSettings({ alternateHotkeys: item.checked }) },
+    { label: '大小', submenu: [0.6, 0.8, 1, 1.2, 1.4, 1.6].map((scale) => ({ label: `${Math.round(scale * 100)}%`, type: 'radio', checked: preferences.scale === scale, click: () => updateSettings({ scale }) })) },
+    { type: 'separator' },
+    { label: '退出桌宠', click: () => app.quit() },
+  ]);
+}
+function showMenu() { buildMenu().popup({ window: pet }); }
+
+function registerIpc() {
+  const trusted = (event) => pet && !pet.isDestroyed() && event.sender === pet.webContents && event.senderFrame === pet.webContents.mainFrame;
+  ipcMain.handle('pet:get-state', (event) => trusted(event) ? state() : null);
+  ipcMain.handle('pet:set-settings', (event, patch) => trusted(event) ? updateSettings(patch) : null);
+  ipcMain.on('pet:drag-start', (event) => { if (trusted(event) && !preferences.clickThrough) dragOrigin = pet.getBounds(); });
+  ipcMain.on('pet:drag-move', (event, delta) => {
+    if (!trusted(event) || !dragOrigin || !Number.isFinite(delta?.dx) || !Number.isFinite(delta?.dy)) return;
+    const bounds = { ...dragOrigin, x: dragOrigin.x + Math.round(delta.dx), y: dragOrigin.y + Math.round(delta.dy) };
+    pet.setBounds(fitBounds(bounds, screen.getDisplayMatching(bounds).workArea));
+  });
+  ipcMain.on('pet:drag-end', (event) => { if (trusted(event)) { dragOrigin = null; saveSettings(); } });
+  ipcMain.on('pet:menu', (event) => { if (trusted(event)) showMenu(); });
+  ipcMain.on('pet:quit', (event) => { if (trusted(event)) app.quit(); });
+}
+
+async function createWindow() {
+  const primary = screen.getPrimaryDisplay().workArea;
+  const size = dimensions(preferences.scale);
+  const desired = { ...size, x: savedPosition?.x ?? primary.x + primary.width - size.width - 24, y: savedPosition?.y ?? primary.y + primary.height - size.height - 12 };
+  pet = new BrowserWindow({
+    ...fitBounds(desired, screen.getDisplayMatching(desired).workArea),
+    show: false, frame: false, thickFrame: false, transparent: true, backgroundColor: '#00000000',
+    resizable: false, maximizable: false, fullscreenable: false,
+    alwaysOnTop: preferences.alwaysOnTop, skipTaskbar: true, hasShadow: false,
+    title: 'Elysia Desktop Pet', icon: nativeImage.createFromBuffer(trayPng()),
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, backgroundThrottling: false, devTools: !app.isPackaged },
+  });
+  pet.setMenu(null);
+  pet.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  pet.webContents.on('will-navigate', (event, url) => { if (url !== rendererUrl) event.preventDefault(); });
+  pet.webContents.on('will-attach-webview', (event) => event.preventDefault());
+  // The renderer owns the character's right-click gesture and sends a single pet:menu IPC.
+  pet.on('move', saveSettings);
+  pet.on('closed', () => { pet = null; if (!quitting) app.quit(); });
+  pet.once('ready-to-show', () => { if (!isSmokeTest) pet.showInactive(); });
+  await pet.loadURL(rendererUrl);
+  pointerTimer = setInterval(() => {
+    if (pet && !pet.isDestroyed()) send('pet:pointer', pointerPayload(screen.getCursorScreenPoint(), pet.getBounds()));
+  }, 33);
+  if (isSmokeTest) {
+    await pet.webContents.executeJavaScript(`new Promise((resolve,reject)=>{const deadline=Date.now()+15000;const timer=setInterval(()=>{if(document.documentElement.dataset.ready==='true'){clearInterval(timer);resolve(true)}else if(Date.now()>deadline){clearInterval(timer);reject(new Error('Renderer did not become ready'))}},50)})`);
+    if (smokeNativeHotkeys) {
+      const deadline = Date.now() + 10000;
+      while (!hotkeys.legacy.active && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50));
+      if (!hotkeys.legacy.active) throw new Error('Passive hotkey listener did not become ready');
+      pet.show(); pet.focus();
+      const handle = pet.getNativeWindowHandle();
+      const nativeHandle = handle.length >= 8 ? handle.readBigUInt64LE().toString() : String(handle.readUInt32LE());
+      await new Promise((resolve, reject) => {
+        const injector = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(root, 'scripts', 'smoke-hotkey-input.ps1'), '-ExpectedWindow', nativeHandle], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+        let output = '';
+        const timeout = setTimeout(() => { injector.kill(); reject(new Error('Native input test timed out')); }, 10000);
+        injector.stderr.on('data', (chunk) => { output += chunk.toString(); });
+        injector.on('error', (error) => { clearTimeout(timeout); reject(error); });
+        injector.on('exit', (code) => { clearTimeout(timeout); if (code === 0) resolve(); else reject(new Error(`Native input test refused / failed: ${output}`)); });
+      });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      const expression = await pet.webContents.executeJavaScript('window.elysiaPreview.snapshot().expression');
+      if (expression !== 'glasses') throw new Error(`Native Space+1 did not toggle once: ${expression}`);
+    }
+    const renderer = await pet.webContents.executeJavaScript(`(async () => ({bridge:typeof window.elysiaDesktop, node:typeof window.require, title:document.title, acceleration:window.elysiaPreview.acceleration, state:await window.elysiaDesktop.getState()}))()`);
+    const webPreferences = pet.webContents.getLastWebPreferences();
+    if (!renderer.state?.settings || renderer.node !== 'undefined' || !webPreferences.sandbox || !webPreferences.contextIsolation || webPreferences.nodeIntegration) {
+      throw new Error('Desktop host isolation / preload smoke check failed');
+    }
+    if (renderer.acceleration?.normal !== true || renderer.acceleration?.megaphone !== true) {
+      throw new Error('Desktop character WebGL acceleration smoke check failed');
+    }
+    console.log(JSON.stringify({ smoke: 'ok', nativeSpaceChord: smokeNativeHotkeys ? 'passed-on-own-foreground-window' : 'not-requested', renderer, bounds: pet.getBounds(), security: { sandbox: webPreferences.sandbox, contextIsolation: webPreferences.contextIsolation, nodeIntegration: webPreferences.nodeIntegration } }));
+    app.quit();
+  }
+}
+
+if (!app.requestSingleInstanceLock()) app.quit();
+else {
+  app.on('second-instance', () => recover());
+  app.whenReady().then(async () => {
+    settingsFile = path.join(app.getPath('userData'), 'settings.json');
+    loadSettings();
+    session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+    session.defaultSession.setPermissionCheckHandler(() => false);
+    session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+      callback({ cancel: !isLocalResource(details.url, root) && !details.url.startsWith('data:') && !details.url.startsWith('blob:') });
+    });
+    registerIpc();
+    tray = new Tray(nativeImage.createFromBuffer(trayPng()));
+    tray.setToolTip('爱莉希雅桌宠 · Ctrl+Alt+P 恢复操作');
+    tray.on('click', () => recover());
+    tray.on('right-click', () => tray.popUpContextMenu(buildMenu()));
+    hotkeys.recovery = globalShortcut.register('CommandOrControl+Alt+P', () => recover());
+    configureAlternateHotkeys();
+    configureLegacyHotkeys();
+    await createWindow();
+    const constrainToScreen = () => { if (pet && !pet.isDestroyed()) pet.setBounds(fitBounds(pet.getBounds(), screen.getDisplayMatching(pet.getBounds()).workArea)); };
+    screen.on('display-removed', constrainToScreen);
+    screen.on('display-metrics-changed', constrainToScreen);
+  }).catch((error) => { console.error(error); app.exit(1); });
+}
+app.on('before-quit', () => {
+  quitting = true;
+  clearInterval(pointerTimer);
+  clearTimeout(saveTimer);
+  if (pet && !pet.isDestroyed()) {
+    try {
+      const { x, y } = pet.getBounds();
+      fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
+      fs.writeFileSync(settingsFile, JSON.stringify({ settings: preferences, position: { x, y } }, null, 2));
+    } catch { /* Shutdown must still release input listeners. */ }
+  }
+  if (legacyProcess) legacyProcess.kill();
+  legacyProcess = null;
+  globalShortcut.unregisterAll();
+  if (tray) tray.destroy();
+});
+app.on('window-all-closed', () => app.quit());

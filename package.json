@@ -1,0 +1,68 @@
+{
+  "name": "elysia-standalone-pet",
+  "productName": "Elysia Desktop Pet",
+  "version": "0.5.0",
+  "private": true,
+  "description": "独立爱莉希雅桌面伙伴",
+  "author": "ActorF",
+  "license": "MIT",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "node scripts/launch.cjs",
+    "test": "node --test",
+    "package": "electron-builder --dir",
+    "make:portable": "electron-builder --win portable",
+    "test:smoke": "node scripts/launch.cjs --smoke-test",
+    "test:visual": "node scripts/visual-check.cjs",
+    "test:faces": "node scripts/face-integrity-check.cjs",
+    "preview:expressions": "node scripts/expression-review.cjs && node scripts/revision-preview.cjs",
+    "preview:motion": "node scripts/expression-review.cjs --motion-only"
+  },
+  "devDependencies": {
+    "electron": "43.8.0",
+    "electron-builder": "26.15.3",
+    "playwright": "1.64.1"
+  },
+  "build": {
+    "appId": "io.actorf.elysia.standalonepet",
+    "productName": "Elysia Desktop Pet",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "renderer/**/*",
+      "assets/v3/*.png",
+      "assets/v4/character-angry.png",
+      "assets/v4/character-surprise.png",
+      "assets/v4/character-cry.png",
+      "assets/v5/*.png",
+      "assets/original-controls.json",
+      "package.json",
+      "LICENSE",
+      "ASSET-NOTICE.md"
+    ],
+    "asarUnpack": [
+      "electron/legacy-hotkeys.ps1"
+    ],
+    "win": {
+      "target": "portable",
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "Elysia-Desktop-Pet-${version}.exe"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ActorF/Elysia-Standalone-Pet.git"
+  },
+  "homepage": "https://github.com/ActorF/Elysia-Standalone-Pet#readme",
+  "bugs": {
+    "url": "https://github.com/ActorF/Elysia-Standalone-Pet/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

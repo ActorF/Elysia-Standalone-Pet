@@ -1,0 +1,22 @@
+Use case: precise-object-edit
+Asset type: Repaired transparent full-body megaphone action sprite.
+FIRST image = the exact edit target: character-megaphone-v2.png.
+SECOND image = hair-cleanup reference ONLY: character-neutral.png. Do not copy its open eyes, mouth, arms or pose.
+
+Make ONE localized repair to the FIRST image: remove the erroneous angular/scalloped poster-decoration residue on the upper-right pink hair, so this hair area matches the smooth repaired pink hair in the SECOND image. In the roughly 1089x1444 first image the defect is around x=685..950,y=65..320: a thin brighter-magenta angular line descending near x=725,y=110 then expanding into a cloud/heart-shaped outline enclosing a pale mismatched patch around x=710..920,y=200..300. Delete that entire spurious line and mismatched pale patch. Seamlessly continue the surrounding pastel-pink hair shading, following the SECOND image's clean appearance.
+
+PRESERVE the legitimate long magenta curved strand contour that sweeps across the top toward the upper-right curled hair tip. Preserve the actual curl, hair silhouette, normal strand edges, broad smooth highlights, all headband and parting lines. Do not mistake the true curved hair strand for the defect. Do not add any new decoration.
+
+LOCK EVERYTHING ELSE IN THE FIRST IMAGE EXACTLY:
+- The large bold dark-plum > < tightly closed shouting eyes, their exact shape, thickness, size and position.
+- The delighted wide open pink mouth.
+- The tilted oval face and all original features.
+- The pink-and-white megaphone pointing left, bell, inner cone, handle and the left-side gripping hand; original arm and sleeve pose.
+- The empty open hand on the right.
+- Huge head, very short body and legs, original crossed leg pose and tiny feet.
+- Original blue plaid shawl, cream fabric panels, white blouse, navy bow and skirt, gold fasteners, black socks.
+- The precise pastel drawing style, shading, color blocks and dark-plum outlines.
+
+Do not add cat ears or a tail, do not add tea or other props, do not open the eyes. Do not redesign or redraw the whole character. The ONLY visible change should be the upper-right hair's angular/scalloped residue disappearing.
+
+Output a SINGLE complete full-body sprite on genuine transparent alpha, SAME approximate 1089x1444 canvas and SAME placement/scale as the FIRST image. Entire megaphone and feet visible within transparent margins. No background, ground, shadows, text, labels, logos or extra elements.

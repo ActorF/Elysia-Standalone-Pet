@@ -1,0 +1,40 @@
+<!doctype html>
+<!-- Independent transparent desktop character; right-click opens the expression and settings palette. -->
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'">
+  <title>Elysia · 爱莉希雅桌宠</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main id="stage" aria-label="爱莉希雅桌宠，可拖动人物，右键打开菜单">
+    <canvas id="pet" width="600" height="800" aria-label="独立站姿爱莉希雅"></canvas>
+    <p id="loading" role="status">爱莉希雅正在换好衣服…</p>
+    <div id="toast" role="status" aria-live="polite"></div>
+  </main>
+  <section id="controls" class="panel" aria-labelledby="panel-title" hidden>
+    <header>
+      <div class="mark">E</div>
+      <div><p class="eyebrow">A LITTLE COMPANY</p><h1 id="panel-title">今天，也一起吧 <span>♡</span></h1></div>
+      <button id="close-controls" class="icon-button" aria-label="关闭面板">×</button>
+    </header>
+    <div class="panel-content">
+      <div class="section-line"><h2>爱莉希雅的表情</h2><span>空格 + 对应按键</span></div>
+      <div id="expression-grid" class="expression-grid"></div>
+      <button id="megaphone" class="megaphone" aria-pressed="false"><span class="horn-icon">♬</span><span><strong>听我说呀！</strong><small>拿出小喇叭</small></span><kbd>空格 M</kbd><i class="switch"></i></button>
+      <div class="section-line settings-title"><h2>陪伴方式</h2><button id="reset" class="text-button">恢复表情 ↺</button></div>
+      <label class="setting"><span>目光跟随鼠标</span><input id="eyeTracking" type="checkbox" checked><i class="switch"></i></label>
+      <label class="setting"><span>头发、衣摆与腿部摆动</span><input id="hairMotion" type="checkbox" checked><i class="switch"></i></label>
+      <label class="setting"><span>始终在最上层</span><input id="alwaysOnTop" type="checkbox" checked><i class="switch"></i></label>
+      <label class="setting"><span>原版全局快捷键<small>空格组合键，在其他窗口也可用</small></span><input id="legacyHotkeys" type="checkbox" checked><i class="switch"></i></label>
+      <label class="setting"><span>鼠标穿透<small>按 Ctrl + Alt + P 恢复操作</small></span><input id="clickThrough" type="checkbox"><i class="switch"></i></label>
+      <label class="size-setting" for="scale"><span>桌宠大小</span><input id="scale" type="range" min="0.6" max="1.6" step="0.05" value="1"><output id="scale-value">100%</output></label>
+      <p id="hotkey-status" class="hint"></p>
+    </div>
+    <footer><span class="status-dot"></span><span>ELYSIA · 独立桌宠</span><button id="quit" class="text-button">退出</button></footer>
+  </section>
+  <script type="module" src="./app.mjs"></script>
+</body>
+</html>

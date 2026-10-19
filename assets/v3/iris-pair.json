@@ -1,0 +1,19 @@
+{
+  "image": "iris-pair.png",
+  "width": 1774,
+  "height": 887,
+  "boundsThresholdAlpha": 8,
+  "left": {
+    "x": 321,
+    "y": 126,
+    "width": 467,
+    "height": 633
+  },
+  "right": {
+    "x": 985,
+    "y": 125,
+    "width": 467,
+    "height": 634
+  },
+  "note": "Both assets are isolated iris ovals: no eyelids, eyelashes, skin, eyebrows, eye whites, or black pupils. Faint alpha 1–8 pixels outside the main contours are generation edge noise; use these tight bounds for runtime cropping. Preserve original iris aspect ratio (~0.738) when drawing."
+}

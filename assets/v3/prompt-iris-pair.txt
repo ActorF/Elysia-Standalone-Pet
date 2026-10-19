@@ -1,0 +1,18 @@
+Use case: precise-object-edit
+Asset type: TWO isolated iris-only sprites for a 2D desktop-pet eye rig.
+Input images are COLOR/PATTERN references only. Extract and reconstruct ONLY the distinctive blue/lavender iris designs from the chibi Elysia eyes in the references. Do NOT draw a character, face, complete eye or any surrounding facial anatomy.
+
+Output exactly TWO separate upright elongated OVAL IRIS sprites, side by side, with generous transparent space between them and around all sides. Preferred canvas 512x512 pixels; each oval about 145px wide by 200px tall, centered around x=150 and x=360, y=256. The two ovals should have almost the same shape and proportions. All canvas area outside these two ovals MUST have actual alpha transparency.
+
+CRITICAL ORIGINAL IRIS APPEARANCE:
+- This character does NOT have black pupils: NO black center, NO black dot, NO dark circular pupil.
+- The iris itself is a vertically elongated, softly rounded oval, entirely filled with the original eye's simple layered blue/lavender horizontal bands.
+- A medium muted dark slate-blue / denim-blue cap across the top, a broad periwinkle/lavender-blue band below it, and a large light icy-blue lower-middle area.
+- At the very bottom, a little pale pink/lilac luminous OVAL highlighting region, with a few tiny pale square/rectangular bright marks along the lower arc, matching the reference's distinctive original design.
+- A clear small ROUND WHITE highlight near the upper area; an additional tiny white round sparkle near the lower side. Match the reference's simple bright shapes, without fancy starburst effects.
+- Crisp flat pastel cel-art style and color blocking, matching the original reference, not glossy 3D eyeballs and not realistic irises.
+- The top and sides of each ellipse must be a clean simple COLORED iris boundary. No dark-plum line on top, no black rim or outline. If a minimal edge is necessary, use the same soft blue as the iris.
+
+ABSOLUTELY EXCLUDE all eyelashes, eyelids, eyebrows, eye whites/sclera, skin color, face fragments, pink hair, eye corners, tear ducts, dark upper-eye arcs, decorative eye outlines, shadows, or labels. This is IRIS ONLY. Do not preserve the source image's overlaid upper eyelash as part of the iris. Each iris must be a complete clean oval, including a smoothly reconstructed rounded top where the original eyelid covered it.
+
+No text, labels, background, boxes, frames, character parts, extra sprites, or watermark. Genuine transparent alpha background. Exactly two matching iris-only ovals.

@@ -1,0 +1,19 @@
+Use case: precise-object-edit
+Asset type: Transparent full-body desktop-pet cat-form sprite.
+Edit target: the attached character-neutral.png. Make a cat-eared version of THIS EXACT drawing by adding only two natural pink cat ears and one pink cat tail. Do not redesign anything else.
+
+ADD TWO NATURAL CAT EARS:
+- Soft pastel-pink fur matching her hair, with pale pink/cream inner-ear fluff, a few subtle tufted fur edges and gently curved shapes.
+- Each ear root is buried naturally IN / BEHIND the existing head hair, with the surrounding hair overlapping its base. They must look anatomically attached, not flat triangles pasted on top, not an ear headband or costume accessory.
+- Modest cute ear size suited to the existing huge chibi head. Position them on the upper-left and upper-right slopes of the head with enough transparent margin above the ear tips; keep the existing hair and head position.
+- Preserve the existing lace headband and real curled hair tip. Existing elf ears can remain or be lightly obscured by nearby hair; do not change the face.
+
+ADD ONE LONG CURVED PINK CAT TAIL:
+- Tail root is hidden behind the skirt/clothing around the lower back/hip. It must appear to grow from behind the body, never from the head or arm.
+- A graceful long soft curve curling to the side, with a smooth gradually tapering tip and simple subtle fur texture, matching original pastel cel-shaded linework.
+- Keep it separate and recognizable from the existing long hair. Draw behind the body/shawl so it does not cross over face, hands, skirt front or legs. Keep the entire tail visible within the canvas.
+- Preserve the original long hair unchanged; do not replace any existing hair with the tail.
+
+LOCK THE ORIGINAL: exact huge blue-lavender eyes with layered horizontal color bands and lower circular highlights; original dark-plum eyelash shape; tilted oval face and mouth; enormous head, tiny short body and short legs; complete original pose and hand positions; pink hair outline/highlights and corrected smooth upper-right hair area; white lace band; blue plaid shawl; cream fabric panels; blouse; navy bow and skirt; gold fasteners; black stockings and tiny feet. Keep the original drawing's flat pastel color style and original dark-plum line thickness. No new gloss or added costume detail.
+
+Output one complete character with genuine transparent alpha, approximately the SAME 1089x1444 canvas and SAME character position/scale as input. Use the available transparent space for ears/tail; keep all parts uncropped. Do not shrink the character to make room if modest ear/tail placement can fit. No cat muzzle, whiskers, changed eyes, paw gloves, text, logos, backgrounds, shadows, props or extra creatures. ONLY add ears and tail.

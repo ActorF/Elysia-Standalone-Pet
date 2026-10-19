@@ -1,0 +1,12 @@
+Use case: precise-object-edit
+Asset type: Transparent 2D chibi desktop-pet neutral sprite.
+Edit target: the attached character-faithful-v2.png.
+Make ONE localized cleanup only. This is NOT a redesign, restyle or redraw.
+
+The existing character has a mistaken poster-decoration residue in the UPPER RIGHT area of her pink head hair: a thin brighter-magenta/angular zigzag line drops from the upper-right scalp and turns into an irregular scalloped heart/cloud-shaped outline around a pale off-color patch. In the 1090x1443 source this defect is approximately within x=685..950, y=65..320, most visibly the narrow angular line around x=725,y=110 and the cloud-shaped curve around x=710..900,y=200..300. This is NOT a hair strand. Remove that entire spurious angular/scalloped boundary and its mismatched pale interior patch, and naturally continue the surrounding pastel-pink hair color/shading across the cleaned area.
+
+PRESERVE the legitimate long curved strand contour that sweeps across the top of the scalp toward the upper-right curled hair tip, preserve the actual curled hair tip and dark outer silhouette, and preserve normal broad smooth hair highlights. Do not remove the hair curl, hairband, parting, actual hair strands or outer outline. Do not invent any new lines in the cleaned patch.
+
+LOCK EVERYTHING ELSE EXACTLY AS THE SOURCE: the fully drawn original huge blue-lavender eyes with layered color bands and sparkling lower circles; original tilted oval face; eye positions, upper eyelashes and brows; mouth; enormous head and very short small body; pose; hand positions; pink hair shape and length; white lace headband; blue plaid shawl; cream panels; blouse; navy skirt and bow; gold fasteners; tiny black-stocking legs and original foot shapes. Keep the exact original flat pastel colors and dark-plum linework outside the small cleaned hair area. Do not lengthen the body. Do not add glossy anime rendering or extra detail.
+
+Output a SINGLE full-body character on genuine transparent alpha, with the SAME canvas dimensions and SAME character placement as the source (1090x1443). Keep the original transparent margins. No background, text, framing, shadows, or extra elements. The only visible change should be the upper-right hair's unwanted angular/scalloped color residue disappearing.
