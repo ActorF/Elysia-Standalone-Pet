@@ -53,11 +53,11 @@ test('hair and lower-body motion keep the entire mesh connected and facing forwa
   // An inverted triangle would fold an edge even without a topological gap.
   const nx=66, ny=88, dx=1090/nx, dy=1443/ny;
   const area = (a,b,c) => ((b[0]-a[0])*(c[1]-a[1])-(c[0]-a[0])*(b[1]-a[1]))/(dx*dy);
-  for (let time=0; time<8; time+=.2) {
-    const rows = Array.from({length:ny+1}, (_,j) => Array.from({length:nx+1}, (_,i) => deformPoint(i*dx,j*dy,time)));
+  for (const [cat,pose] of [false,true].flatMap(cat=>['idle','megaphone','tea','cake'].map(pose=>[cat,pose]))) for (let time=0; time<8; time+=.2) {
+    const rows = Array.from({length:ny+1}, (_,j) => Array.from({length:nx+1}, (_,i) => deformPoint(i*dx,j*dy,time,true,cat,pose)));
     for (let j=0; j<rows.length-1; j++) for (let i=0; i<nx; i++) {
       const a=rows[j][i], b=rows[j][i+1], c=rows[j+1][i], d=rows[j+1][i+1];
-      assert.ok(Math.min(area(a,b,c),area(b,d,c)) > .25, `Folded or collapsed mesh at ${i},${j}, time ${time}`);
+      assert.ok(Math.min(area(a,b,c),area(b,d,c)) > .25, `Folded or collapsed mesh at ${i},${j}, time ${time}, cat ${cat}, pose ${pose}`);
     }
   }
 });
@@ -65,7 +65,9 @@ test('hair and lower-body motion keep the entire mesh connected and facing forwa
 test('side locks and fringe have visible independent travel at default pet size', () => {
   for (const [name,point,min,max] of [
     ['left lock',[200,650],12,18], ['right lock',[920,620],12,18],
-    ['left fringe tip',[500,475],8,12], ['right fringe tip',[530,450],8,12],
+    ['left fringe tip',[500,475],8,14], ['right fringe tip',[530,450],8,14],
+    ['inner left lock',[365,400],7,13], ['inner right lock',[780,550],9,15],
+    ['left hair beside face',[330,460],5,10], ['right hair beside face',[750,500],5,10],
   ]) {
     const xs=Array.from({length:241},(_,frame)=>deformPoint(...point,frame/30)[0]);
     const pixels=(Math.max(...xs)-Math.min(...xs))*.336;
@@ -73,23 +75,26 @@ test('side locks and fringe have visible independent travel at default pet size'
   }
 });
 
-test('hair joints leave eyes, eyebrows, facial features and the fringe root on the rigid head', () => {
-  const points=[[500,300],[413,555],[647,520],[350,515],[450,510],[590,465],[710,510],[531,587],[535,639],[367,619],[667,603]];
-  // Sample whole visible brow spans, not just their centres: the original fine
-  // brow marks partly cross the fringe, and expressive brows sit closer to eyes.
-  for (let x=375;x<=425;x+=5) points.push([x,422]);
-  for (let x=540;x<=640;x+=5) points.push([x,389]);
-  for (let x=380;x<=440;x+=5) points.push([x,505]);
-  for (let x=610;x<=680;x+=5) points.push([x,462]);
-  for (let x=370;x<=404;x+=5) for(let y=450;y<=475;y+=5) points.push([x,y]);
-  for (let x=616;x<=665;x+=5) for(let y=409;y<=419;y+=5) points.push([x,y]);
+test('the face, elf ear and enabled cat ears stay fixed while nearby hair moves', () => {
+  const face=[[413,555],[647,520],[350,515],[450,510],[590,465],[710,510],[531,587],[535,639],[367,619],[667,603]];
+  const ear=[];
+  for(let x=917;x<=962;x+=5)for(let y=425;y<=480;y+=5)ear.push([x,y]);
   for(let time=0;time<8;time+=.2){
-    const head=jointPose(time)[0],c=Math.cos(head),s=Math.sin(head);
-    for(const [x,y] of points){
-      const expected=[540+c*(x-540)-s*(y-705),705+s*(x-540)+c*(y-705)];
-      const actual=deformPoint(x,y,time);
-      assert.ok(Math.hypot(actual[0]-expected[0],actual[1]-expected[1])<1e-8,`Hair distorted facial point ${x},${y}`);
+    for(const point of [...face,...ear])assert.deepEqual(deformPoint(...point,time),point,`Fixed facial/ear point ${point} moved`);
+    for(const point of [[222,110],[230,210],[300,180],[842,70],[825,150],[857,210]]) {
+      assert.deepEqual(deformPoint(...point,time,true,true),point,`Cat ear ${point} moved`);
     }
+  }
+});
+
+test('all upper hair sections follow one slow arc rather than opposing ripples',()=>{
+  const joints=[1,2,10,11],samples=Array.from({length:241},(_,i)=>jointPose(i/30));
+  for(const joint of joints.slice(1)){
+    const a=samples.map(v=>v[joints[0]]),b=samples.map(v=>v[joint]);
+    const mean=x=>x.reduce((n,v)=>n+v,0)/x.length,ma=mean(a),mb=mean(b);
+    const covariance=a.reduce((n,v,i)=>n+(v-ma)*(b[i]-mb),0);
+    const variance=x=>x.reduce((n,v)=>n+(v-mean(x))**2,0);
+    assert.ok(covariance/Math.sqrt(variance(a)*variance(b))>.98,'Hair sections must swing together with a small tip delay');
   }
 });
 

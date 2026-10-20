@@ -1,81 +1,20 @@
-/** @fileoverview Clean-face expressions and anatomically drawn prop poses, animated by a joint-weighted mesh. */
+/** Independent face, action and skin composition; continuous motion runs after composition. */
 import { createMeshRig } from './mesh-rig.mjs';
 import { harmonizePoseOutfit } from './outfit-palette.mjs';
-import { ellipse, path, star } from './drawing-primitives.mjs';
+import { ellipse, path } from './drawing-primitives.mjs';
 const INK = '#4a203d', W = 1090, H = 1443;
 const EYES = [
-  { x:413,y:555,rx:49,ry:64,angle:-.19,outer:-1,crop:[321,126,467,633] },
-  { x:647,y:520,rx:57,ry:67,angle:-.12,outer:1,crop:[985,125,467,634] },
+  {x:413,y:555,rx:49,ry:64,angle:-.19,outer:-1},
+  {x:647,y:520,rx:57,ry:67,angle:-.12,outer:1},
 ];
-const REPAINTED = ['angry','surprise','cry'];
-const CLOSED_FACES = new Set(['sleep','squint','wink','pat','smile']);
-const POSES = new Set(['tea','cake','cat']);
-const NO_BLINK = new Set([...POSES,...REPAINTED,...CLOSED_FACES]);
+const REPAINTED = new Set(['angry','sleep','dizzy','surprise','cry']);
+const NO_BLINK = new Set([...REPAINTED,'wink','smile','awkward']);
 export const RIG = Object.freeze({width:W,height:H,x:38,y:68,scale:.48,gazeX:292,gazeY:326});
-
+const makeCanvas=()=>{const c=document.createElement('canvas');c.width=W;c.height=H;return c;};
 function cheek(ctx,x,y,strength=.25) {
   const fill=ctx.createRadialGradient(x,y,0,x,y,37);
   fill.addColorStop(0,`rgba(231,125,156,${strength})`);fill.addColorStop(1,'rgba(231,125,156,0)');
   ellipse(ctx,x,y,37,18,fill);
-}
-function eyebrow(ctx,eye,emotion) {
-  const y=emotion==='surprise'?-94:-86;
-  const slope=emotion==='angry'?-eye.outer*18:emotion==='cry'?eye.outer*16:0;
-  path(ctx,[['moveTo',-41,y-slope],['quadraticCurveTo',0,y-12,43,y+slope],['quadraticCurveTo',1,y-5,-41,y-slope]],null,0,'#ae6f91');
-}
-function iris(ctx,source,eye,emotion) {
-  if(['star','dizzy'].includes(emotion)) {
-    const fill=ctx.createLinearGradient(0,-63,0,65);
-    fill.addColorStop(0,'#52658e');fill.addColorStop(.47,'#8f9edb');fill.addColorStop(1,'#dfc2f4');
-    ellipse(ctx,0,1,eye.rx,eye.ry,fill);
-    if(emotion==='star'){star(ctx,0,4,47,'#ffeabd');star(ctx,0,4,30,'#fff9e4');}
-    if(emotion==='dizzy') {
-      const points=[];
-      for(let i=0;i<=90;i++){const a=i/90*Math.PI*5,r=3+i/90*42;points.push([i?'lineTo':'moveTo',Math.cos(a)*r,Math.sin(a)*r]);}
-      path(ctx,points,'#59416f',6);
-    } else {ellipse(ctx,-22,-32,7,6,'#fffafeee');ellipse(ctx,22,38,4,4,'#fff8ffdd');}
-  } else {
-    // A separate transparent iris retains the reference bands without importing
-    // the original eyelid, lash or skin pixels into a new expression.
-    const shrink=emotion==='surprise'?.81:1;
-    ctx.drawImage(source,...eye.crop,-eye.rx*shrink,-eye.ry*shrink,eye.rx*2*shrink,eye.ry*2*shrink);
-  }
-}
-function openEye(ctx,source,eye,emotion) {
-  ctx.save();ctx.translate(eye.x,eye.y);ctx.rotate(eye.angle);
-  const rx=eye.rx+5,ry=eye.ry,angry=emotion==='angry',narrow=emotion==='squint';
-  const slant=angry?-eye.outer*18:0,top=narrow?-8:-ry+(angry?23:2),bottom=narrow?14:ry;
-  ctx.beginPath();ctx.moveTo(-rx,top+18-slant);
-  ctx.bezierCurveTo(-rx+10,top-13-slant,rx-13,top-18+slant,rx,top+15+slant);
-  ctx.bezierCurveTo(rx+1,bottom-6,rx-8,bottom+5,1,bottom+5);
-  ctx.bezierCurveTo(-rx+9,bottom+5,-rx-1,bottom-7,-rx,top+18-slant);
-  ctx.closePath();ctx.fillStyle='#fff7f5';ctx.fill();
-  ctx.save();ctx.clip();iris(ctx,source,eye,emotion);ctx.restore();
-  // Filled, tapered lashes match the original ink weight rather than a thin geometric line.
-  path(ctx,[['moveTo',-rx-4,top+21-slant],['bezierCurveTo',-rx+2,top-22-slant,rx-7,top-29+slant,rx+7,top+20+slant],['bezierCurveTo',rx-9,top-9+slant,-rx+12,top-6-slant,-rx-4,top+21-slant],['closePath']],null,0,INK);
-  const ox=eye.outer*(rx-1),oy=top+4+eye.outer*slant;
-  path(ctx,[['moveTo',ox,oy+10],['quadraticCurveTo',ox+eye.outer*20,oy+13,ox+eye.outer*24,oy-9],['quadraticCurveTo',ox+eye.outer*10,oy+1,ox,oy-2],['closePath']],null,0,INK);
-  if(!narrow)path(ctx,[['moveTo',-rx+16,bottom-2],['quadraticCurveTo',0,bottom+11,rx-12,bottom-4]],'#c187a4',2.5);
-  if(['angry','cry','surprise','awkward'].includes(emotion))eyebrow(ctx,eye,emotion);
-  if(emotion==='cry') {
-    const x=eye.outer*(rx-12),y=bottom-7;
-    path(ctx,[['moveTo',x-11,y-4],['quadraticCurveTo',x+2,y+11,x+12,y-2],['bezierCurveTo',x+17,y+39,x+17,y+56,x+3,y+57],['bezierCurveTo',x-12,y+55,x-10,y+26,x-11,y-4],['closePath']],'#91b5d4',2,'#c3e4f4df');
-    path(ctx,[['moveTo',x-2,y+12],['quadraticCurveTo',x+3,y+27,x+1,y+42]],'#fff8ffcc',3.5);
-  }
-  ctx.restore();
-}
-function mouth(ctx,kind) {
-  ctx.save();ctx.translate(536,636);ctx.rotate(-.15);
-  if(['smile','pat','wink','heart','star'].includes(kind)) {
-    path(ctx,[['moveTo',-29,-9],['quadraticCurveTo',0,-5,31,-13],['quadraticCurveTo',33,26,4,28],['quadraticCurveTo',-20,24,-29,-9],['closePath']],'#a14955',3.5,'#e9949d');
-    path(ctx,[['moveTo',-13,18],['quadraticCurveTo',2,4,20,16],['quadraticCurveTo',13,27,1,25]],null,0,'#fbb7b6');
-  } else if(kind==='surprise')ellipse(ctx,0,5,15,23,'#d78b98','#a75667',3.5);
-  else if(kind==='sleep')ellipse(ctx,0,6,8,5,'#d48d9f','#b87387',3);
-  else if(kind==='angry'||kind==='cry')path(ctx,[['moveTo',-22,10],['quadraticCurveTo',0,-10,24,9]],'#a65e75',4);
-  else if(kind==='dizzy')path(ctx,[['moveTo',-24,9],['quadraticCurveTo',-10,-2,0,9],['quadraticCurveTo',11,20,24,7]],'#aa637b',4);
-  else if(kind==='awkward')path(ctx,[['moveTo',-18,-8],['lineTo',20,-8],['lineTo',18,16],['lineTo',-17,16],['closePath']],'#9c5e75',3.5,'#fff7ef');
-  else path(ctx,[['moveTo',-23,2],['quadraticCurveTo',0,20,24,0]],'#b86e80',4);
-  ctx.restore();
 }
 function glasses(ctx) {
   for(const eye of EYES) {
@@ -85,21 +24,17 @@ function glasses(ctx) {
   }
   path(ctx,[['moveTo',484,543],['quadraticCurveTo',527,516,570,520]],'#80576f',4);
 }
-function expressionFace(ctx,source,expression) {
+function awkwardFace(ctx) {
   for(const eye of EYES) {
-    if(expression==='awkward') {
-      ctx.save();ctx.translate(eye.x,eye.y);ctx.rotate(eye.angle);
-      path(ctx,[['moveTo',-43,-8],['lineTo',42,-10],['lineTo',34,24],['lineTo',-34,25],['closePath']],INK,6,'#fffbf4');
-      eyebrow(ctx,eye,'cry');ctx.restore();
-    } else openEye(ctx,source,eye,expression);
+    ctx.save();ctx.translate(eye.x,eye.y);ctx.rotate(eye.angle);
+    path(ctx,[['moveTo',-43,-8],['lineTo',42,-10],['lineTo',34,24],['lineTo',-34,25],['closePath']],INK,6,'#fffbf4');
+    path(ctx,[['moveTo',-41,-86-eye.outer*16],['quadraticCurveTo',0,-98,43,-86+eye.outer*16]],'#ae6f91',3);ctx.restore();
   }
-  mouth(ctx,expression);
-  const blush=['blush','pat','heart'].includes(expression)?.43:.14;
-  cheek(ctx,398,643,blush);cheek(ctx,659,614,blush);
-  if(expression==='glasses')glasses(ctx);
-  if(expression==='awkward')path(ctx,[['moveTo',744,474],['bezierCurveTo',731,494,721,514,736,519],['bezierCurveTo',754,523,754,503,744,474]],'#91b5d4',2,'#c3e4f4');
+  ctx.save();ctx.translate(536,636);ctx.rotate(-.15);
+  path(ctx,[['moveTo',-18,-8],['lineTo',20,-8],['lineTo',18,16],['lineTo',-17,16],['closePath']],'#9c5e75',3.5,'#fff7ef');ctx.restore();
+  path(ctx,[['moveTo',744,474],['bezierCurveTo',731,494,721,514,736,519],['bezierCurveTo',754,523,754,503,744,474]],'#91b5d4',2,'#c3e4f4');
 }
-function facePatch(ctx,image,includeMouth=true,side='both',protectHorn=false) {
+function facePatch(ctx,image,includeMouth=true,side='both',pose='idle',preserveMouth=false) {
   // Expressions share the exact neutral body. Import the complete expression face
   // so brows, lid creases and eye corners stay coherent with its artwork.
   // The lower notch preserves the active mouth during an automatic blink.
@@ -109,16 +44,23 @@ function facePatch(ctx,image,includeMouth=true,side='both',protectHorn=false) {
   const lowerFace=includeMouth
     ? [['quadraticCurveTo',716,641,623,664],['quadraticCurveTo',513,702,380,654],['quadraticCurveTo',330,644,307,619]]
     : [['quadraticCurveTo',716,633,623,600],['quadraticCurveTo',551,574,484,600],['quadraticCurveTo',400,663,307,619]];
-  path(mc,[['moveTo',304,366],['quadraticCurveTo',541,319,779,347],['lineTo',790,588],...lowerFace,['closePath']],null,0,'#fff');
+  // Cross the plain pink area above the fine fringe strands, never their
+  // dark starting points (which otherwise acquire a clipped join).
+  path(mc,[['moveTo',304,300],['quadraticCurveTo',541,245,779,280],['lineTo',790,588],...lowerFace,['closePath']],null,0,'#fff');
   if(side==='right')mc.clearRect(0,0,530,H);
-  if(protectHorn) {
+  if(pose==='megaphone') {
     // The megaphone overlaps the left cheek. Keep its foreground silhouette
     // while replacing both of the old angular eyes with the shared artwork.
     mc.shadowBlur=0;mc.globalCompositeOperation='destination-out';
     path(mc,[['moveTo',0,450],['lineTo',149,470],['lineTo',320,572],['lineTo',369,606],['quadraticCurveTo',398,614,400,670],['lineTo',420,820],['lineTo',0,820],['closePath']],null,0,'#fff');
     // This pose's open shouting mouth sits higher than the neutral smile.
-    mc.clearRect(480,578,120,107);
+    if(preserveMouth)mc.clearRect(480,578,120,107);
   }
+  // A drinking mouth stays attached to its short straw, and the cake bite/fork
+  // stays in front of the face for every expression.
+  mc.shadowBlur=0;mc.globalCompositeOperation='destination-out';
+  if(pose==='tea')path(mc,[['moveTo',509,610],['lineTo',548,603],['lineTo',579,637],['lineTo',629,636],['lineTo',686,717],['lineTo',624,826],['lineTo',526,797],['closePath']],null,0,'#fff');
+  if(pose==='cake')path(mc,[['moveTo',566,629],['quadraticCurveTo',592,617,610,640],['lineTo',620,654],['lineTo',701,694],['lineTo',702,738],['lineTo',553,700],['lineTo',547,659],['closePath']],null,0,'#fff');
   const pc=patch.getContext('2d');pc.drawImage(image,0,0,W,H);
   pc.globalCompositeOperation='destination-in';pc.drawImage(mask,0,0);
   ctx.drawImage(patch,0,0);
@@ -140,55 +82,92 @@ function heartDetails(ctx,image) {
   pc.globalCompositeOperation='destination-in';pc.drawImage(mask,0,0);
   ctx.drawImage(patch,0,0);
 }
-function makeFrame(images,expression,blink,horn) {
-  const canvas=document.createElement('canvas');canvas.width=W;canvas.height=H;
-  const ctx=canvas.getContext('2d');
-  const image=horn?images.megaphone:POSES.has(expression)?images[expression]:images.neutral;
-  const originalFace=['glasses','blush','heart',null].includes(expression);
-  const paintedFace=REPAINTED.includes(expression)||CLOSED_FACES.has(expression);
-  const customFace=!horn&&!POSES.has(expression)&&!paintedFace&&!originalFace;
-  ctx.drawImage(image,0,0,W,H);
-  if(horn)facePatch(ctx,images.closed,false,'both',true);
-  if(!horn&&!POSES.has(expression)) {
-    if(CLOSED_FACES.has(expression))facePatch(ctx,images.closed,expression!=='wink',expression==='wink'?'right':'both');
-    else if(paintedFace)facePatch(ctx,images[expression]);
-    if(customFace){facePatch(ctx,images.clean);expressionFace(ctx,images.iris,expression);}
-    if(expression==='heart')heartDetails(ctx,images.heart);
-    if(blink)facePatch(ctx,images.closed,false);
-    if(expression==='glasses')glasses(ctx);
-    if(expression==='blush'){cheek(ctx,398,643,.46);cheek(ctx,659,614,.46);}
+
+function catSkin(ctx,image) {
+  // Only the two ears/crown and the tail belong to the skin. No neutral hands,
+  // face or clothing from the cat source can overwrite the selected action.
+  const skin=makeCanvas(), sc=skin.getContext('2d');
+  sc.drawImage(image,0,0,W,H);
+  sc.globalCompositeOperation='destination-in';
+  const mask=makeCanvas(),mc=mask.getContext('2d');
+  const fade=mc.createLinearGradient(0,276,0,322);
+  fade.addColorStop(0,'#fff');fade.addColorStop(1,'#ffffff00');
+  mc.fillStyle=fade;mc.fillRect(0,0,W,322);
+  path(mc,[['moveTo',802,1083],['quadraticCurveTo',873,1151,961,1107],['quadraticCurveTo',1011,1084,978,1044],['quadraticCurveTo',958,1003,993,987],['quadraticCurveTo',1037,972,1074,1021],['quadraticCurveTo',1116,1098,1071,1160],['quadraticCurveTo',1014,1242,899,1198],['quadraticCurveTo',830,1175,802,1116],['closePath']],null,0,'#fff');
+  sc.drawImage(mask,0,0);ctx.drawImage(skin,0,0);
+}
+
+/** Source composition is shared by the runtime, screenshots and pixel audits. */
+export function composeCharacterFrame(images,state,blink=false) {
+  const {expression=null,pose='idle',cat=false,glasses:wearGlasses=false}=state;
+  const canvas=makeCanvas(),ctx=canvas.getContext('2d');
+  const base=pose==='idle'?images.neutral:images[pose];
+  ctx.drawImage(base,0,0,W,H);
+  // Keep each action's contact mouth by default. An explicitly selected face
+  // replaces its expression, while the props remain protected foreground art.
+  if(expression) {
+    const face=pose==='idle'?canvas:makeCanvas(),fc=face.getContext('2d');
+    if(pose!=='idle')fc.drawImage(images.neutral,0,0,W,H);
+    if(REPAINTED.has(expression))facePatch(fc,images[expression]);
+    else if(expression==='wink'||expression==='smile')facePatch(fc,images.closed,expression==='smile',expression==='wink'?'right':'both');
+    else if(expression==='heart')heartDetails(fc,images.heart);
+    else if(expression==='awkward'){facePatch(fc,images.clean);awkwardFace(fc);}
+    else if(expression==='blush'){cheek(fc,398,643,.46);cheek(fc,659,614,.46);}
+    if(pose!=='idle')facePatch(ctx,face,pose!=='tea','both',pose);
+  } else if(pose==='megaphone')facePatch(ctx,images.closed,false,'both',pose,true);
+  if(blink)facePatch(ctx,images.closed,false,'both',pose,pose==='megaphone');
+  if(cat)catSkin(ctx,images.cat);
+  if(wearGlasses) {
+    const layer=makeCanvas();glasses(layer.getContext('2d'));
+    facePatch(ctx,layer,true,'both',pose);
   }
-  if(expression==='sleep'&&!horn){ctx.fillStyle='#9c7caa';ctx.font='italic 34px Georgia';ctx.fillText('z',940,280);ctx.font='italic 46px Georgia';ctx.fillText('Z',987,235);}
   return canvas;
 }
-/** Loads the shared body, repaired faces and independent prop poses. */
+
+/** Loads common artwork once; action clothes are colour matched before use. */
 export async function loadCharacter() {
+  const sources={
+    neutral:'v3/character-neutral',clean:'v3/character-face-clean',
+    tea:'v3/character-tea',cake:'v3/character-cake',cat:'v3/character-cat',megaphone:'v3/character-megaphone',
+    closed:'v6/character-closed',cry:'v6/character-cry',heart:'v5/character-heart',surprise:'v4/character-surprise',
+    sleep:'v7/character-sleep',angry:'v7/character-angry',dizzy:'v7/character-dizzy',
+    sleepDecoration:'v7/sleep-decoration',dizzyDecoration:'v7/dizzy-decoration',
+  };
   const images={};
-  await Promise.all(Object.entries({neutral:'neutral',clean:'face-clean',tea:'tea',cake:'cake',cat:'cat',megaphone:'megaphone'}).map(async([key,name])=>{
-    const image=new Image();image.src=new URL(`../assets/v3/character-${name}.png`,import.meta.url).href;await image.decode();images[key]=image;
+  await Promise.all(Object.entries(sources).map(async([key,name])=>{
+    const image=new Image();image.src=new URL(`../assets/${name}.png`,import.meta.url).href;
+    await image.decode();images[key]=image;
   }));
-  await Promise.all([...REPAINTED,'closed'].map(async name=>{
-    const version=['cry','closed'].includes(name)?'v6':'v4';
-    const image=new Image();image.src=new URL(`../assets/${version}/character-${name}.png`,import.meta.url).href;await image.decode();images[name]=image;
-  }));
-  images.iris=new Image();images.iris.src=new URL('../assets/v3/iris-pair.png',import.meta.url).href;await images.iris.decode();
-  images.heart=new Image();images.heart.src=new URL('../assets/v5/character-heart.png',import.meta.url).href;await images.heart.decode();
-  const normalize=image=>{const canvas=document.createElement('canvas');canvas.width=W;canvas.height=H;canvas.getContext('2d').drawImage(image,0,0,W,H);return canvas;};
+  const normalize=image=>{const c=makeCanvas();c.getContext('2d').drawImage(image,0,0,W,H);return c;};
   const neutral=normalize(images.neutral);
-  for(const id of [...POSES,'megaphone'])images[id]=harmonizePoseOutfit(normalize(images[id]),neutral);
+  for(const id of ['tea','cake','cat','megaphone'])images[id]=harmonizePoseOutfit(normalize(images[id]),neutral);
   const mesh=createMeshRig();
   return {images,mesh,cache:new Map(),normal:mesh,megaphone:mesh};
 }
-/** Caches expression drawings and animates joints continuously without cursor-dependent hair displacement. */
+
+/** Every face/action/skin combination has its own bounded cached composition. */
 export function drawCharacter(ctx,rigs,state,settings={}) {
-  const blink=state.blink>.72&&!state.megaphone&&!NO_BLINK.has(state.expression);
-  const key=`${state.megaphone?'horn':state.expression??'neutral'}:${blink?'blink':'open'}`;
-  if(!rigs.cache.has(key))rigs.cache.set(key,makeFrame(rigs.images,state.expression,blink,state.megaphone));
-  const source=rigs.cache.get(key);
-  const gaze=!state.megaphone&&!blink&&!['sleep','smile','pat','wink','awkward','dizzy','star','squint'].includes(state.expression);
+  const pose=state.pose??'idle',expression=state.expression??null;
+  const blink=state.blink>.72&&!NO_BLINK.has(expression)&&!(pose==='megaphone'&&!expression);
+  const key=JSON.stringify([pose,expression,!!state.cat,!!state.glasses,blink]);
+  let source=rigs.cache.get(key);
+  if(!source){
+    source=composeCharacterFrame(rigs.images,state,blink);rigs.cache.set(key,source);
+    if(rigs.cache.size>12)rigs.cache.delete(rigs.cache.keys().next().value);
+  }
+  const gaze=!blink&&!NO_BLINK.has(expression)&&!(pose==='megaphone'&&!expression);
   const frame=rigs.mesh.draw(source,key,state,settings,gaze);
   ctx.clearRect(0,0,600,800);
-  ctx.save();ctx.translate(RIG.x,RIG.y+(settings.hairMotion===false?0:Math.sin(state.time*.92)*1.1));ctx.scale(RIG.scale,RIG.scale);
-  ctx.drawImage(frame,0,0,W,H);
-  ctx.restore();
+  ctx.save();ctx.translate(RIG.x,RIG.y);ctx.scale(RIG.scale,RIG.scale);
+  ctx.drawImage(frame,0,0,W,H);ctx.restore();
+  // Decorations live in their own screen plane, outside the character rig.
+  const drift=settings.hairMotion===false?0:Math.sin(state.time*.8)*2;
+  if(expression==='sleep') {
+    ctx.drawImage(rigs.images.sleepDecoration,427,8+drift,170,170);
+    ctx.save();ctx.lineJoin='round';ctx.strokeStyle='#fff4f8';ctx.fillStyle='#663650';ctx.lineWidth=4;
+    for(const [x,y,size] of [[78,145,30],[91,165,23],[103,181,17]]) {
+      ctx.font=`italic bold ${size}px Georgia`;ctx.strokeText('z',x,y+drift);ctx.fillText('z',x,y+drift);
+    }
+    ctx.restore();
+  } else if(expression==='dizzy')ctx.drawImage(rigs.images.dizzyDecoration,57,6+drift,486,162);
 }

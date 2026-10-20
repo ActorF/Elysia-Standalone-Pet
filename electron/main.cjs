@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { spawn } = require('node:child_process');
-const { DEFAULT_SETTINGS, EXPRESSION_KEYS, sanitizeSettings, dimensions, fitBounds, pointerPayload, actionForKey, isLocalResource } = require('./host-policy.cjs');
+const { DEFAULT_SETTINGS, EXPRESSION_KEYS, SKIN_KEYS, POSE_KEYS, sanitizeAppearance, sanitizeSettings, dimensions, fitBounds, pointerPayload, actionForKey, isLocalResource } = require('./host-policy.cjs');
 const { trayPng } = require('./tray-icon.cjs');
 
 const root = path.resolve(__dirname, '..');
@@ -15,6 +15,7 @@ const isSmokeTest = process.argv.includes('--smoke-test') || smokeNativeHotkeys;
 if (isSmokeTest) app.setPath('userData', path.join(app.getPath('temp'), 'elysia-pet-host-smoke'));
 let pet, tray, settingsFile, pointerTimer, saveTimer, dragOrigin, legacyProcess;
 let preferences = { ...DEFAULT_SETTINGS };
+let appearance = sanitizeAppearance();
 let savedPosition = null;
 let quitting = false;
 const hotkeys = { legacy: { active: false, error: null }, alternate: { active: false, failed: [] }, recovery: false };
@@ -126,7 +127,7 @@ function configureAlternateHotkeys() {
   for (const binding of alternateBindings.splice(0)) globalShortcut.unregister(binding);
   hotkeys.alternate = { active: false, failed: [] };
   if (!preferences.alternateHotkeys) return;
-  for (const key of [...Object.keys(EXPRESSION_KEYS), 'M', 'Backspace']) {
+  for (const key of [...Object.keys(EXPRESSION_KEYS), ...Object.keys(SKIN_KEYS), ...Object.keys(POSE_KEYS), 'Backspace']) {
     const accelerator = `CommandOrControl+Alt+${key}`;
     try {
       if (globalShortcut.register(accelerator, () => action(actionForKey(key)))) alternateBindings.push(accelerator);
@@ -137,21 +138,22 @@ function configureAlternateHotkeys() {
 }
 
 const labels = {
-  glasses: '眼镜', blush: '脸红', angry: '生气', sleep: '困困', surprise: '惊讶',
-  squint: '眯眼', dizzy: '晕晕', wink: '眨眼', cry: '哭哭', heart: '爱心眼',
-  star: '星星眼', smile: '微笑', cat: '猫猫', cake: '蛋糕', tea: '奶茶', awkward: '尴尬', pat: '摸头',
+  glasses: '眼镜', blush: '害羞', angry: '生气', sleep: '睡觉', surprise: '惊讶',
+  dizzy: '晕', wink: 'Wink', cry: '伤心', heart: '爱心眼', smile: '微笑',
+  cat: '猫猫形态', idle: '日常待机', megaphone: '听我说呀！', cake: '吃蛋糕', tea: '喝奶茶', awkward: '囧',
 };
 function buildMenu() {
   return Menu.buildFromTemplate([
     { label: '显示 / 恢复操作 (Ctrl+Alt+P)', click: () => recover() },
     { label: '表情说明与设置', click: () => { recover(false); action('show-controls'); } },
-    { label: '喇叭 (Space+M)', click: () => action('toggle-megaphone') },
-    { label: '重置表情 (Space+Backspace)', click: () => action('reset') },
-    { label: '表情', submenu: Object.entries(EXPRESSION_KEYS).map(([key, id]) => ({ label: `${labels[id]}  Space+${key}`, click: () => action({ type: 'expression', id }) })) },
+    { label: '表情（数字区）', submenu: Object.entries(EXPRESSION_KEYS).map(([key, id]) => ({ label: `${labels[id]}  Space+${key}`, type: 'checkbox', checked: appearance.expression === id, click: () => action({ type: 'expression', id }) })) },
+    { label: '装扮开关（F1–F2）', submenu: Object.entries(SKIN_KEYS).map(([key, id]) => ({ label: `${labels[id]}  Space+${key}`, type: 'checkbox', checked: appearance[id], click: () => action({ type: 'toggle-skin', id }) })) },
+    { label: '动作四选一（F3–F6）', submenu: Object.entries(POSE_KEYS).map(([key, id]) => ({ label: `${labels[id]}  Space+${key}`, type: 'radio', checked: appearance.pose === id, click: () => action({ type: 'pose', id }) })) },
+    { label: '全部重置 (Space+Backspace)', click: () => action('reset') },
     { type: 'separator' },
     { label: '始终置顶', type: 'checkbox', checked: preferences.alwaysOnTop, click: (item) => updateSettings({ alwaysOnTop: item.checked }) },
     { label: '点击穿透（托盘或 Ctrl+Alt+P 恢复）', type: 'checkbox', checked: preferences.clickThrough, click: (item) => updateSettings({ clickThrough: item.checked }) },
-    { label: '原版 Space 全局组合键', type: 'checkbox', checked: preferences.legacyHotkeys, click: (item) => updateSettings({ legacyHotkeys: item.checked }) },
+    { label: 'Space 全局组合键', type: 'checkbox', checked: preferences.legacyHotkeys, click: (item) => updateSettings({ legacyHotkeys: item.checked }) },
     { label: '备用 Ctrl+Alt 全局组合键', type: 'checkbox', checked: preferences.alternateHotkeys, click: (item) => updateSettings({ alternateHotkeys: item.checked }) },
     { label: '大小', submenu: [0.6, 0.8, 1, 1.2, 1.4, 1.6].map((scale) => ({ label: `${Math.round(scale * 100)}%`, type: 'radio', checked: preferences.scale === scale, click: () => updateSettings({ scale }) })) },
     { type: 'separator' },
@@ -164,6 +166,7 @@ function registerIpc() {
   const trusted = (event) => pet && !pet.isDestroyed() && event.sender === pet.webContents && event.senderFrame === pet.webContents.mainFrame;
   ipcMain.handle('pet:get-state', (event) => trusted(event) ? state() : null);
   ipcMain.handle('pet:set-settings', (event, patch) => trusted(event) ? updateSettings(patch) : null);
+  ipcMain.on('pet:set-appearance', (event, value) => { if (trusted(event)) appearance = sanitizeAppearance(value); });
   ipcMain.on('pet:drag-start', (event) => { if (trusted(event) && !preferences.clickThrough) dragOrigin = pet.getBounds(); });
   ipcMain.on('pet:drag-move', (event, delta) => {
     if (!trusted(event) || !dragOrigin || !Number.isFinite(delta?.dx) || !Number.isFinite(delta?.dy)) return;
@@ -218,7 +221,7 @@ async function createWindow() {
       });
       await new Promise((resolve) => setTimeout(resolve, 200));
       const expression = await pet.webContents.executeJavaScript('window.elysiaPreview.snapshot().expression');
-      if (expression !== 'glasses') throw new Error(`Native Space+1 did not toggle once: ${expression}`);
+      if (expression !== 'blush') throw new Error(`Native Space+1 did not toggle once: ${expression}`);
     }
     const renderer = await pet.webContents.executeJavaScript(`(async () => ({bridge:typeof window.elysiaDesktop, node:typeof window.require, title:document.title, acceleration:window.elysiaPreview.acceleration, state:await window.elysiaDesktop.getState()}))()`);
     const webPreferences = pet.webContents.getLastWebPreferences();

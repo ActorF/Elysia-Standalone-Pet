@@ -1,5 +1,5 @@
 /** @fileoverview Connects desktop IPC, expression controls, pointer dragging and the animated canvas. */
-import { EXPRESSIONS, createPetState, applyAction, actionForKey, advance } from './state.mjs';
+import { EXPRESSIONS, SKINS, POSES, createPetState, applyAction, actionForKey, advance } from './state.mjs';
 import { loadCharacter, drawCharacter, RIG } from './faithful-character.mjs';
 
 const desktop = window.elysiaDesktop;
@@ -8,13 +8,15 @@ const canvas = document.querySelector('#pet');
 const ctx = canvas.getContext('2d');
 const panel = document.querySelector('#controls');
 const toast = document.querySelector('#toast');
-let settings = { eyeTracking: true, hairMotion: true, alwaysOnTop: true, clickThrough: false, legacyHotkeys: true, scale: 1 };
+let settings = { eyeTracking: true, hairMotion: true, alwaysOnTop: true, clickThrough: false, legacyHotkeys: true, scale: 1, cat: false, glasses: false };
 let hotkeys = {};
 let toastTimer;
 let dragging = null;
 let spaceHeld = false;
 let spaceTarget = null;
 let spaceChordUsed = false;
+let restoringAppearance = Boolean(desktop);
+const pendingActions = [];
 
 function tell(message) {
   toast.textContent = message;
@@ -30,43 +32,53 @@ function showControls(show = panel.hidden) {
 
 function syncControls() {
   for (const button of document.querySelectorAll('[data-expression]')) button.setAttribute('aria-pressed', String(state.expression === button.dataset.expression));
-  document.querySelector('#megaphone').setAttribute('aria-pressed', String(state.megaphone));
+  for (const button of document.querySelectorAll('[data-skin]')) button.setAttribute('aria-checked', String(state[button.dataset.skin]));
+  for (const button of document.querySelectorAll('[data-pose]')) button.setAttribute('aria-pressed', String(state.pose === button.dataset.pose));
+  desktop?.setAppearance({ expression: state.expression, pose: state.pose, cat: state.cat, glasses: state.glasses });
   for (const id of ['eyeTracking', 'hairMotion', 'alwaysOnTop', 'legacyHotkeys', 'clickThrough']) document.getElementById(id).checked = settings[id];
   document.querySelector('#scale').value = settings.scale;
   document.querySelector('#scale-value').value = `${Math.round(settings.scale * 100)}%`;
   document.querySelector('#hotkey-status').textContent = !desktop
-    ? '浏览器预览：按住空格切换表情；完整桌面功能请使用启动桌宠。'
-    : hotkeys.legacy?.error ? `原版快捷键暂不可用：${hotkeys.legacy.error}。仍可点击上方按钮。`
-    : settings.legacyHotkeys ? '再次按相同组合恢复默认。空格 + M 切换喇叭，空格 + 退格重置。'
-    : '原版全局快捷键已关闭；仍可点击表情按钮。';
+    ? '浏览器预览：空格 + 数字切换表情，空格 + F1–F6 切换装扮和动作。'
+    : hotkeys.legacy?.error ? `全局快捷键暂不可用：${hotkeys.legacy.error}。仍可点击上方按钮。`
+    : settings.legacyHotkeys ? '空格 + 数字再次按下恢复默认表情；装扮和动作保持。空格 + 退格全部重置。'
+    : '全局快捷键已关闭；仍可点击上方按钮。';
 }
 
 function act(action) {
+  // Restore saved skins first, then apply shortcuts that arrived while IPC was loading.
+  if (restoringAppearance) { pendingActions.push(action); return; }
   if (action.type === 'toggle-controls') return showControls();
   if (action.type === 'show-controls') return showControls(true);
   applyAction(state, action);
   syncControls();
-  if (action.type === 'expression') tell(state.expression ? EXPRESSIONS.find(item => item.id === state.expression).label : '恢复默认');
-  if (action.type === 'toggle-megaphone') tell(state.megaphone ? '听我说呀！' : '收起小喇叭');
-  if (action.type === 'reset') tell('恢复默认');
+  if (action.type === 'toggle-skin' || action.type === 'reset') void updateSettings({ cat: state.cat, glasses: state.glasses });
+  if (action.type === 'expression') tell(state.expression ? EXPRESSIONS.find(item => item.id === state.expression).label : '恢复默认表情');
+  if (action.type === 'pose' && POSES.some(item => item.id === action.id)) tell(POSES.find(item => item.id === state.pose).label);
+  if (action.type === 'toggle-skin' && SKINS.some(item => item.id === action.id)) tell(`${SKINS.find(item => item.id === action.id).label}已${state[action.id] ? '开启' : '关闭'}`);
+  if (action.type === 'reset') tell('装扮、动作与表情已重置');
 }
 
-for (const expression of EXPRESSIONS) {
+function controlButton(item, kind) {
   const button = document.createElement('button');
-  button.className = 'expression';
-  button.dataset.expression = expression.id;
-  button.setAttribute('aria-pressed', 'false');
-  button.setAttribute('aria-label', `${expression.label}，空格加 ${expression.key}`);
-  const symbol = document.createElement('span'); symbol.className = 'symbol'; symbol.textContent = expression.icon;
-  const label = document.createElement('span'); label.className = 'label'; label.textContent = expression.label;
-  const key = document.createElement('kbd'); key.textContent = expression.key;
+  button.className = kind === 'skin' ? 'skin-toggle' : 'expression';
+  button.dataset[kind] = item.id;
+  if (kind === 'skin') { button.setAttribute('role', 'switch'); button.setAttribute('aria-checked', 'false'); }
+  else button.setAttribute('aria-pressed', 'false');
+  button.setAttribute('aria-label', `${item.label}，空格加 ${item.key}`);
+  const symbol = document.createElement('span'); symbol.className = 'symbol'; symbol.textContent = item.icon;
+  const label = document.createElement('span'); label.className = 'label'; label.textContent = item.label;
+  const key = document.createElement('kbd'); key.textContent = item.key;
   button.append(symbol, label, key);
-  button.addEventListener('click', () => act({ type: 'expression', id: expression.id }));
-  document.querySelector('#expression-grid').append(button);
+  if (kind === 'skin') { const indicator = document.createElement('i'); indicator.className = 'switch'; button.append(indicator); }
+  button.addEventListener('click', () => act({ type: kind === 'skin' ? 'toggle-skin' : kind, id: item.id }));
+  document.querySelector(`#${kind}-grid`).append(button);
 }
+for (const item of EXPRESSIONS) controlButton(item, 'expression');
+for (const item of SKINS) controlButton(item, 'skin');
+for (const item of POSES) controlButton(item, 'pose');
 
 document.querySelector('#close-controls').onclick = () => showControls(false);
-document.querySelector('#megaphone').onclick = () => act({ type: 'toggle-megaphone' });
 document.querySelector('#reset').onclick = () => act({ type: 'reset' });
 document.querySelector('#quit').onclick = () => desktop?.quit();
 
@@ -116,11 +128,9 @@ canvas.addEventListener('pointerdown', event => {
   desktop?.dragStart();
 });
 canvas.addEventListener('pointerup', event => {
-  const moved = dragging?.moved;
   if (dragging) desktop?.dragEnd();
   dragging = null;
   if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-  if (!moved && event.button === 0) act({ type: 'expression', id: 'pat' });
 });
 canvas.addEventListener('lostpointercapture', () => { dragging = null; desktop?.dragEnd(); });
 canvas.addEventListener('contextmenu', event => { event.preventDefault(); desktop ? desktop.showMenu() : showControls(true); });
@@ -159,6 +169,9 @@ if (desktop) {
   desktop.onSettings(snapshot => { settings = snapshot.settings; hotkeys = snapshot.hotkeys; syncControls(); });
   const snapshot = await desktop.getState();
   settings = snapshot.settings; hotkeys = snapshot.hotkeys;
+  state.cat = settings.cat === true; state.glasses = settings.glasses === true;
+  restoringAppearance = false;
+  for (const action of pendingActions.splice(0)) act(action);
 }
 syncControls();
 
@@ -183,10 +196,15 @@ try {
   window.elysiaPreview = {
     acceleration: { normal: atlas.normal.accelerated, megaphone: atlas.megaphone.accelerated },
     snapshot: () => JSON.parse(JSON.stringify(state)),
-    render: (expression, megaphone = false, time = 0, resolutionScale = 1) => {
-      const preview = createPetState(); preview.expression = expression; preview.megaphone = megaphone;
-      preview.time = Number.isFinite(time) ? time : 0;
-      const factor = Math.min(3, Math.max(1, Number(resolutionScale) || 1));
+    render: (expressionOrOptions, megaphone = false, time = 0, resolutionScale = 1) => {
+      const options = expressionOrOptions && typeof expressionOrOptions === 'object' ? expressionOrOptions : { expression: expressionOrOptions, pose: megaphone ? 'megaphone' : 'idle', time };
+      const preview = createPetState();
+      if (EXPRESSIONS.some(item => item.id === options.expression)) preview.expression = options.expression;
+      if (POSES.some(item => item.id === options.pose)) preview.pose = options.pose;
+      preview.cat = options.cat === true; preview.glasses = options.glasses === true;
+      preview.blink = Number.isFinite(options.blink) ? Math.min(1, Math.max(0, options.blink)) : 0;
+      preview.time = Number.isFinite(options.time) ? options.time : 0;
+      const factor = Math.min(3, Math.max(1, Number(options.resolutionScale ?? resolutionScale) || 1));
       const target = document.createElement('canvas'); target.width = 600 * factor; target.height = 800 * factor;
       const previewContext = target.getContext('2d'); previewContext.scale(factor, factor);
       drawCharacter(previewContext, atlas, preview, settings);

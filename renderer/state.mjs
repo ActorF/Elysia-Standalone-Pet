@@ -1,46 +1,61 @@
-/** @fileoverview Pure expression toggles and time-based animation for the desktop character. */
+/** @fileoverview Independent face, pose and skin selections plus time-based animation. */
 export const EXPRESSIONS = [
-  ['glasses', '眼镜', '1', '⌘'], ['blush', '害羞', '2', '♡'],
-  ['angry', '生气', '3', '╬'], ['sleep', '睡觉', '4', '☾'],
-  ['surprise', '惊讶', '5', '!'], ['squint', '眯眯眼', '6', '⌒'],
-  ['dizzy', '晕', '7', '◎'], ['wink', 'Wink', '8', '✧'],
-  ['cry', '哭', '9', '◡'], ['heart', '爱心眼', '0', '♥'],
-  ['star', '星星眼', '-', '★'], ['smile', '眯眼笑', '=', '☺'],
-  ['cat', '猫猫形态', 'F1', '♧'], ['cake', '吃蛋糕', 'F2', '♜'],
-  ['tea', '喝奶茶', 'F3', '◒'], ['awkward', '囧', 'F4', '囧'],
-  ['pat', '摸头', 'F5', '♡'],
+  ['blush', '害羞', '1', '♡'], ['angry', '生气', '2', '╬'],
+  ['sleep', '睡觉', '3', '☾'], ['surprise', '惊讶', '4', '!'],
+  ['dizzy', '晕', '5', '◎'], ['wink', 'Wink', '6', '✧'],
+  ['cry', '伤心', '7', '◡'], ['heart', '爱心眼', '8', '♥'],
+  ['smile', '微笑', '9', '☺'], ['awkward', '囧', '0', '囧'],
+].map(([id, label, key, icon]) => ({ id, label, key, icon }));
+
+export const SKINS = [
+  ['cat', '猫猫形态', 'F1', '♧'], ['glasses', '眼镜', 'F2', '⌘'],
+].map(([id, label, key, icon]) => ({ id, label, key, icon }));
+
+export const POSES = [
+  ['idle', '日常待机', 'F3', '♡'], ['megaphone', '听我说呀！', 'F4', '♬'],
+  ['cake', '吃蛋糕', 'F5', '♜'], ['tea', '喝奶茶', 'F6', '◒'],
 ].map(([id, label, key, icon]) => ({ id, label, key, icon }));
 
 /** Creates independent renderer state; expression changes never alter desktop preferences. */
 export function createPetState() {
-  return { expression: null, megaphone: false, gaze: { x: 0, y: 0 },
+  return { expression: null, pose: 'idle', cat: false, glasses: false, gaze: { x: 0, y: 0 },
     target: { x: 0, y: 0 }, time: 0, blink: 0, nextBlink: 3.2, blinkAge: -1,
     hair: 0, hairVelocity: 0, actionAge: 0 };
 }
 
-/** Applies the original toggle-to-default semantics, with an independent megaphone switch. */
+/** Faces toggle to neutral; poses are exclusive selections and skins are independent switches. */
 export function applyAction(state, action) {
+  if (!action || typeof action !== 'object') return state;
   if (action.type === 'expression' && EXPRESSIONS.some(item => item.id === action.id)) {
     state.expression = state.expression === action.id ? null : action.id;
     state.actionAge = 0;
-  } else if (action.type === 'toggle-megaphone') {
-    state.megaphone = !state.megaphone;
+  } else if (action.type === 'pose' && POSES.some(item => item.id === action.id)) {
+    state.pose = action.id;
+    state.actionAge = 0;
+  } else if (action.type === 'toggle-skin' && SKINS.some(item => item.id === action.id)) {
+    state[action.id] = !state[action.id];
     state.actionAge = 0;
   } else if (action.type === 'reset') {
     state.expression = null;
-    state.megaphone = false;
+    state.pose = 'idle';
+    state.cat = false;
+    state.glasses = false;
     state.actionAge = 0;
   }
   return state;
 }
 
-/** Converts the legacy Space chord key into a semantic action without consuming typed keys. */
+/** Numeric keys select faces; F keys select skins / poses after the Space prefix. */
 export function actionForKey(code) {
-  if (code === 'KeyM') return { type: 'toggle-megaphone' };
+  if (typeof code !== 'string') return null;
   if (code === 'Backspace') return { type: 'reset' };
-  const key = code.startsWith('Digit') ? code.slice(5) : code === 'Minus' ? '-' : code === 'Equal' ? '=' : code;
+  const key = code.startsWith('Digit') ? code.slice(5) : code.startsWith('Numpad') ? code.slice(6) : code;
   const item = EXPRESSIONS.find(expression => expression.key === key);
-  return item ? { type: 'expression', id: item.id } : null;
+  if (item) return { type: 'expression', id: item.id };
+  const skin = SKINS.find(item => item.key === key);
+  if (skin) return { type: 'toggle-skin', id: skin.id };
+  const pose = POSES.find(item => item.key === key);
+  return pose ? { type: 'pose', id: pose.id } : null;
 }
 
 /** Smooths global cursor coordinates and advances a damped hair spring independent of frame rate. */

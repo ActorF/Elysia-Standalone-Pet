@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('elysiaDesktop', Object.freeze({
   onAction: (callback) => subscribe('pet:action', callback),
   onSettings: (callback) => subscribe('pet:settings', callback),
   setSettings: (patch) => ipcRenderer.invoke('pet:set-settings', patch),
+  setAppearance: (appearance) => ipcRenderer.send('pet:set-appearance', appearance),
   dragStart: () => ipcRenderer.send('pet:drag-start'),
   dragMove: (delta) => ipcRenderer.send('pet:drag-move', delta),
   dragEnd: () => ipcRenderer.send('pet:drag-end'),

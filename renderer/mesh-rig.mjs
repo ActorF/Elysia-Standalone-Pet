@@ -4,9 +4,9 @@ const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const smooth = (a, b, x) => { const v = clamp((x - a) / (b - a), 0, 1); return v * v * (3 - 2 * v); };
 
 const PARTS = [
-  { name: 'head', pivot: [540, 705] },
-  { name: 'left-lock', pivot: [290, 270], feather: 30, polygon: [[130,240],[282,250],[328,464],[300,626],[382,713],[332,770],[171,760],[119,657]] },
-  { name: 'right-lock', pivot: [835, 238], feather: 30, polygon: [[840,235],[1040,290],[1051,674],[881,737],[739,682],[783,594],[812,441]] },
+  { name: 'crown', pivot: [540, 180] },
+  { name: 'left-lock', pivot: [330, 235], feather: 55, polygon: [[130,200],[370,220],[410,450],[405,632],[430,720],[332,790],[145,778],[100,600]] },
+  { name: 'right-lock', pivot: [775, 210], feather: 55, polygon: [[665,235],[1015,230],[1075,675],[885,765],[660,710],[645,565],[670,390]] },
   { name: 'back-hair-right', pivot: [780, 724], polygon: [[827,699],[978,728],[1060,845],[1057,993],[931,1090],[823,1147],[777,1085],[898,1006],[936,902],[875,783]] },
   { name: 'back-hair-left', pivot: [294, 1128], polygon: [[223,1108],[305,1140],[300,1260],[408,1312],[412,1355],[299,1393],[156,1358],[157,1215]] },
   { name: 'cloak-left', pivot: [340, 859], feather: 40, polygon: [[307,859],[426,941],[419,1080],[371,1197],[439,1316],[390,1392],[262,1263],[65,1170],[47,1085],[160,967]] },
@@ -18,7 +18,7 @@ const PARTS = [
   { name: 'leg-right', pivot: [564, 1066], feather: 38, polygon: [[510,1037],[654,1045],[726,1200],[753,1335],[653,1380],[536,1240]] },
   // Follow the pink fringe itself. The loose centre moves below a fixed root;
   // eye guards below keep the neighbouring lashes/skin out of this joint.
-  { name: 'fringe', pivot: [500, 278], feather: 24, polygon: [[406,294],[560,257],[599,304],[608,397],[583,439],[548,463],[510,485],[470,502],[444,479],[422,437],[397,403]] },
+  { name: 'fringe', pivot: [500, 278], feather: 40, polygon: [[365,277],[575,241],[645,286],[650,420],[620,480],[541,517],[470,535],[420,510],[382,437],[363,373]] },
   { name: 'top-tuft', pivot: [832, 202], feather: 24, polygon: [[765,130],[856,113],[897,118],[941,111],[966,140],[950,204],[889,240],[799,226]] },
 ];
 
@@ -34,6 +34,29 @@ function polygonWeight(x, y, points, feather = 18) {
   return smooth(-feather, feather, inside ? distance : -distance);
 }
 
+// Keep the skin and complete eyelash silhouettes fixed, instead of freezing
+// broad ellipses that also covered the visible front locks. The two tiny grey
+// strokes printed across the fringe travel with that painted hair surface.
+const FACE = [[320,513],[346,480],[377,455],[394,430],[418,473],[448,497],[477,497],[540,482],[572,460],[590,441],[607,401],[613,351],[614,310],[650,346],[680,401],[710,438],[731,483],[726,568],[711,614],[678,652],[604,682],[489,707],[374,663],[339,631],[324,582]];
+const EAR = [[894,401],[991,401],[991,505],[894,525]];
+const CAT_EARS = [
+  [[159,292],[175,116],[205,48],[425,131],[335,211],[290,294]],
+  [[665,132],[852,11],[902,80],[902,262],[835,294],[783,208]],
+];
+const PROP_ANCHORS = [
+  [[0,430],[160,448],[345,553],[421,608],[445,842],[240,850],[185,790],[0,790]],
+  [[480,590],[645,590],[755,750],[780,900],[510,900]],
+  [[280,665],[495,665],[530,570],[650,570],[800,740],[805,940],[270,940]],
+];
+const outside = (x,y,polygon,margin=25) => 1-polygonWeight(x,y,polygon,margin);
+function catAnchor(x,y) {
+  return CAT_EARS.reduce((weight,polygon)=>weight*outside(x,y,polygon,38),1);
+}
+
+function propAnchors(x,y) {
+  // Pad the foreground by a full mesh cell, then release nearby hair softly.
+  return PROP_ANCHORS.map(polygon=>Math.max(0,(outside(x,y,polygon,120)-.7)/.3));
+}
 function weightsForPoint(x, y) {
   const weights = PARTS.map((part, index) => index === 0
     ? 1 - smooth(680, 765, y)
@@ -45,17 +68,16 @@ function weightsForPoint(x, y) {
   weights[8] *= smooth(1060, 1150, y); weights[9] *= smooth(1060, 1150, y);
   const legs = weights[8] + weights[9];
   if (legs > 1) { weights[8] /= legs; weights[9] /= legs; }
-  weights[10] *= smooth(310, 410, y);
-  // These guards cover the complete eye artwork, including the upper lashes.
-  // They fade inside the fringe rather than dragging the eyes with its tips.
-  const eyes = smooth(1, 1.35, Math.hypot((x - 411) / 81, (y - 548) / 91))
-    * smooth(1, 1.35, Math.hypot((x - 647) / 95, (y - 519) / 110));
-  // Eyebrows overlap the pink fringe in the original drawing. Keep their whole
-  // strokes attached to the face, with enough falloff for the stronger sway.
-  const browGuard = (cx, cy, rx, ry) => smooth(0, 30, Math.hypot(Math.max(0, Math.abs(x-cx)-rx), Math.max(0, Math.abs(y-cy)-ry)));
-  const brows = browGuard(400, 422, 28, 10) * browGuard(589, 389, 55, 10)
-    * browGuard(641, 414, 30, 10);
-  for (const index of [1, 2, 10]) weights[index] *= eyes * brows;
+  weights[1] *= smooth(210, 365, y);weights[2] *= smooth(215, 365, y);
+  weights[10] *= smooth(290, 390, y);
+  // Zero weight extends beyond the ear/face edges by a grid cell. The shader
+  // interpolates only fixed vertices across these features; nearby hair has a
+  // broad, smooth attachment transition with no frozen interior islands.
+  const anchor=(polygon,margin)=>1-polygonWeight(x,y,polygon,margin);
+  // Exact, padded core anchors (the soft field above is solely on the outside).
+  const pin=(polygon,margin)=>Math.max(0,2*anchor(polygon,margin)-1);
+  const fixed=pin(FACE,42)*pin(EAR,50);
+  for(const index of [0,1,2,10,11])weights[index]*=fixed;
   return weights;
 }
 
@@ -64,9 +86,9 @@ export function jointPose(time = 0, enabled = true) {
   if (!enabled) return new Float32Array(PARTS.length);
   const t = Number.isFinite(time) ? time : 0;
   return new Float32Array([
-    Math.sin(t * .92) * .0045,
-    Math.sin(t * .94 - .4) * .055,
-    Math.sin(t * .89 + .65) * .058,
+    Math.sin(t * .90) * .006,
+    Math.sin(t * .90 - .20) * .047,
+    Math.sin(t * .90 - .28) * .046,
     Math.sin(t * 1.05 - .85) * .038 + Math.sin(t * 1.72) * .006,
     Math.sin(t * 1.05 - 1.2) * .034,
     // About 7 seconds per cycle, with different phases for fabric and feet.
@@ -77,14 +99,14 @@ export function jointPose(time = 0, enabled = true) {
     Math.sin(t * .90 - .4) * .0655,
     Math.sin(t * .86 + 1.15) * -.070,
     // A wider, softly attached fringe arc stays legible at desktop size.
-    // Its guarded tip travels about 10.5 px in the default 420 px window.
-    Math.sin(t * .92 - .25) * .105,
-    Math.sin(t * .88 + 1.1) * .042,
+    // The centre and face-adjacent locks remain legible at desktop size.
+    Math.sin(t * .90 - .14) * .105,
+    Math.sin(t * .90 - .18) * .035,
   ]);
 }
 
 /** Samples the same weighted transforms as the shader for screen-space motion audits. */
-export function deformPoint(x, y, time = 0, enabled = true) {
+export function deformPoint(x, y, time = 0, enabled = true, cat = false, pose = 'idle') {
   const angles = jointPose(time, enabled), weights = weightsForPoint(x, y);
   let dx = 0, dy = 0;
   PARTS.forEach((part, i) => {
@@ -93,7 +115,9 @@ export function deformPoint(x, y, time = 0, enabled = true) {
     dx += (c * qx - s * qy - qx) * weights[i];
     dy += (s * qx + c * qy - qy) * weights[i];
   });
-  return [x + dx, y + dy];
+  const index=['megaphone','tea','cake'].indexOf(pose);
+  const attachment=(cat?Math.max(0,2*catAnchor(x,y)-1):1)*(index<0?1:propAnchors(x,y)[index]);
+  return [x + dx*attachment, y + dy*attachment];
 }
 
 const vertexSource = `
@@ -102,7 +126,11 @@ attribute vec2 a_position;
 attribute vec4 a_weights0;
 attribute vec4 a_weights1;
 attribute vec4 a_weights2;
+attribute float a_catAnchor;
+attribute vec3 a_propAnchors;
 uniform vec3 u_joints[12];
+uniform float u_cat;
+uniform vec3 u_props;
 varying vec2 v_uv;
 vec2 rotated(vec2 p, vec3 joint) {
   vec2 q = p - joint.xy;
@@ -124,6 +152,7 @@ void main() {
   delta += rotated(p,u_joints[9])*a_weights2.y;
   delta += rotated(p,u_joints[10])*a_weights2.z;
   delta += rotated(p,u_joints[11])*a_weights2.w;
+  delta *= mix(1.0,a_catAnchor,u_cat)*(1.0-dot(u_props,vec3(1.0)-a_propAnchors));
   v_uv = p / vec2(1090.0,1443.0);
   vec2 target = (p+delta)/vec2(1090.0,1443.0);
   gl_Position=vec4(target*vec2(2.0,-2.0)+vec2(-1.0,1.0),0.0,1.0);
@@ -146,7 +175,7 @@ export function createMeshRig() {
   const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
   const gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: true, preserveDrawingBuffer: true, depth: false });
   let available = false, previousSource = null, previousKey = null;
-  let texture, program, gaze, joints, count = 0;
+  let texture, program, gaze, joints, catUniform, propsUniform, count = 0;
   canvas.addEventListener('webglcontextlost', () => { available = false; });
   try {
     if (!gl) throw new Error('WebGL unavailable');
@@ -164,16 +193,16 @@ export function createMeshRig() {
     const add = (i, j) => {
       const x = W * i / nx, y = H * j / ny;
       const weights = weightsForPoint(x, y);
-      vertices.push(x, y, ...weights);
+      vertices.push(x, y, ...weights, Math.max(0,2*catAnchor(x,y)-1),...propAnchors(x,y));
     };
     for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
       add(i,j); add(i+1,j); add(i,j+1); add(i+1,j); add(i+1,j+1); add(i,j+1);
     }
-    const stride = 2 + PARTS.length;
+    const stride = 6 + PARTS.length;
     count = vertices.length / stride;
     const buffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
-    for (const [name, size, offset] of [['position',2,0],['weights0',4,2],['weights1',4,6],['weights2',4,10]]) {
+    for (const [name, size, offset] of [['position',2,0],['weights0',4,2],['weights1',4,6],['weights2',4,10],['catAnchor',1,14],['propAnchors',3,15]]) {
       const attribute = gl.getAttribLocation(program, `a_${name}`);
       gl.enableVertexAttribArray(attribute); gl.vertexAttribPointer(attribute, size, gl.FLOAT, false, stride * 4, offset * 4);
     }
@@ -182,6 +211,7 @@ export function createMeshRig() {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.uniform1i(gl.getUniformLocation(program,'u_image'), 0);
+    catUniform=gl.getUniformLocation(program,'u_cat');propsUniform=gl.getUniformLocation(program,'u_props');
     gaze = gl.getUniformLocation(program,'u_gaze'); joints = gl.getUniformLocation(program,'u_joints[0]');
     gl.viewport(0,0,W,H); gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST); gl.clearColor(0,0,0,0);
     available = true;
@@ -200,6 +230,9 @@ export function createMeshRig() {
       }
       const track = allowGaze && settings.eyeTracking !== false;
       gl.uniform2f(gaze, track ? clamp(state.gaze.x,-1,1) : 0, track ? clamp(state.gaze.y,-1,1) : 0);
+      gl.uniform1f(catUniform,state.cat?1:0);
+      const pose=state.pose??(state.megaphone?'megaphone':'idle');
+      gl.uniform3f(propsUniform,pose==='megaphone'?1:0,pose==='tea'?1:0,pose==='cake'?1:0);
       gl.uniform3fv(joints,values); gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLES,0,count);
       return canvas;
     },

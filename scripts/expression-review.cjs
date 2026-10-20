@@ -19,7 +19,7 @@ const actions = [
   { id: 'cake', label: '吃蛋糕：盘与手、叉子与手臂、入口位置', crop: { x: 115, y: 260, width: 330, height: 315 } },
   { id: 'tea', label: '奶茶：手指包杯、短吸管、杯口靠嘴', crop: { x: 160, y: 260, width: 295, height: 315 } },
   { id: 'cat', label: '猫猫：耳根、耳内、尾根与尾尖', crop: { x: 80, y: 35, width: 480, height: 735 } },
-  { id: 'pat', label: '摸头：自然点头、发顶、单组闭眼，无额外手掌', crop: { x: 110, y: 40, width: 425, height: 385 } },
+  { id: 'megaphone', label: '喇叭：手握把柄、喇叭与脸部遮挡', crop: { x: 40, y: 220, width: 450, height: 355 } },
 ];
 const mime = { '.html': 'text/html', '.css': 'text/css', '.mjs': 'text/javascript', '.js': 'text/javascript', '.png': 'image/png', '.json': 'application/json' };
 const server = createServer((request, response) => {
@@ -147,7 +147,7 @@ async function captureMotion(page, browser) {
     await page.goto(`http://127.0.0.1:${server.address().port}/renderer/index.html`);
     await page.waitForSelector('html[data-ready="true"]');
     const expressions = await page.evaluate(async () => (await import('./state.mjs')).EXPRESSIONS.map(({ id, label }) => ({ id, label })));
-    assert.equal(expressions.length, 17, 'Review must cover all original expressions');
+    assert.equal(expressions.length, 10, 'Review must cover all current expressions');
     if (process.argv.includes('--motion-only')) {
       const motion = await captureMotion(page, browser);
       assert.deepEqual(errors, []);
@@ -160,7 +160,11 @@ async function captureMotion(page, browser) {
     // an enlarged low-resolution crop contains more source detail.
     async function render(expression, time = 0, megaphone = false, crop = faceCrop) {
       return page.evaluate(async ({ expression, time, megaphone, crop, requestedResolution }) => {
-        const data = await window.elysiaPreview.render(expression, megaphone, time, requestedResolution);
+        const options=typeof expression==='object'&&expression?{...expression}:{expression};
+        if(['tea','cake','megaphone'].includes(expression)){options.pose=expression;options.expression=null;}
+        if(expression==='cat'){options.cat=true;options.expression=null;}
+        if(megaphone)options.pose='megaphone';
+        const data = await window.elysiaPreview.render({...options,time},false,time,requestedResolution);
         const image = new Image(); image.src = data; await image.decode();
         const sx = image.naturalWidth / 600, sy = image.naturalHeight / 800;
         const cropped = document.createElement('canvas');
@@ -181,13 +185,15 @@ async function captureMotion(page, browser) {
       faceEntries.push({ label: `${item.label} · ${id}`, data: rendered.crop });
       manifest.expressions.push({ id, label: item.label, width: rendered.width, height: rendered.height, full: `full-${id}.png`, face: `face-${id}.png` });
     }
-    for (let index = 0; index < 3; index++) {
-      await contactSheet(browser, `faces-${index + 1}.png`, `表情面部放大检查 ${index + 1} / 3`,
+    for (let index = 0; index < Math.ceil(faceEntries.length/6); index++) {
+      await contactSheet(browser, `faces-${index + 1}.png`, `表情面部放大检查 ${index + 1} / ${Math.ceil(faceEntries.length/6)}`,
         '逐项检查原眉眼残留、双重睫毛、肤色补丁边缘、倾角、线宽与口型；关闭表情应恢复默认原画。', faceEntries.slice(index * 6, index * 6 + 6));
     }
 
     const horn = await render(null, 0, true);
     savePng('full-megaphone.png', horn.full); savePng('face-megaphone.png', horn.crop);
+    const combination = await render({pose:'tea',cat:true,glasses:true,expression:'angry'});
+    savePng('combo-tea.png',combination.full);
     for (const action of actions) {
       const entries = [];
       for (let index = 0; index < frameTimes.length; index++) {
@@ -209,7 +215,7 @@ async function captureMotion(page, browser) {
     for (const expression of [null, 'glasses', 'blush']) {
       const pair = await page.evaluate(async ({ expression, crop }) => {
         document.querySelector('#reset').click();
-        if (expression) document.querySelector(`[data-expression="${expression}"]`).click();
+        if (expression) document.querySelector(expression==='glasses'?'[data-skin="glasses"]':`[data-expression="${expression}"]`).click();
         const capture = closed => new Promise((resolve, reject) => {
           const deadline = performance.now() + 12000;
           function check() {
@@ -242,6 +248,6 @@ async function captureMotion(page, browser) {
       '左列睁眼、右列实际眨眼。检查眼睛之外的嘴、腮红、眉与肤色是否无意闪变。', blinkEntries);
     assert.deepEqual(errors, [], 'Renderer raised errors during expression capture');
     fs.writeFileSync(path.join(destination, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
-    console.log(JSON.stringify({ capture: 'ok', expressions: expressions.length, faceSheets: 3, actionSheets: actions.length, actualResolution: [manifest.expressions[0].width, manifest.expressions[0].height], visualReviewRequired: true, destination }));
+    console.log(JSON.stringify({ capture: 'ok', expressions: expressions.length, faceSheets: Math.ceil(faceEntries.length/6), actionSheets: actions.length, actualResolution: [manifest.expressions[0].width, manifest.expressions[0].height], visualReviewRequired: true, destination }));
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => server.close());

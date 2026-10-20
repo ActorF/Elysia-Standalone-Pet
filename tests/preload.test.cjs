@@ -33,6 +33,7 @@ test('preload keeps event metadata private and removes subscriptions cleanly', (
   unsubscribe();
   assert.equal(listeners.has('pet:pointer'), false);
   bridge.setSettings({ clickThrough: true });
+  bridge.setAppearance({ cat: true, pose: 'tea' });
   bridge.showMenu();
-  assert.deepEqual(invocations, [['pet:set-settings', { clickThrough: true }], ['pet:menu']]);
+  assert.deepEqual(invocations, [['pet:set-settings', { clickThrough: true }], ['pet:set-appearance', { cat: true, pose: 'tea' }], ['pet:menu']]);
 });
