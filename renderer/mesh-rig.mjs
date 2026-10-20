@@ -18,7 +18,7 @@ const PARTS = [
   { name: 'leg-right', pivot: [564, 1066], feather: 38, polygon: [[510,1037],[654,1045],[726,1200],[753,1335],[653,1380],[536,1240]] },
   // Follow the pink fringe itself. The loose centre moves below a fixed root;
   // eye guards below keep the neighbouring lashes/skin out of this joint.
-  { name: 'fringe', pivot: [500, 278], feather: 16, polygon: [[406,294],[560,257],[599,304],[608,397],[583,439],[548,463],[510,485],[470,502],[444,479],[422,437],[397,403]] },
+  { name: 'fringe', pivot: [500, 278], feather: 24, polygon: [[406,294],[560,257],[599,304],[608,397],[583,439],[548,463],[510,485],[470,502],[444,479],[422,437],[397,403]] },
   { name: 'top-tuft', pivot: [832, 202], feather: 24, polygon: [[765,130],[856,113],[897,118],[941,111],[966,140],[950,204],[889,240],[799,226]] },
 ];
 
@@ -48,9 +48,14 @@ function weightsForPoint(x, y) {
   weights[10] *= smooth(310, 410, y);
   // These guards cover the complete eye artwork, including the upper lashes.
   // They fade inside the fringe rather than dragging the eyes with its tips.
-  const eyes = smooth(1, 1.22, Math.hypot((x - 411) / 81, (y - 548) / 91))
-    * smooth(1, 1.2, Math.hypot((x - 647) / 95, (y - 519) / 110));
-  for (const index of [1, 2, 10]) weights[index] *= eyes;
+  const eyes = smooth(1, 1.35, Math.hypot((x - 411) / 81, (y - 548) / 91))
+    * smooth(1, 1.35, Math.hypot((x - 647) / 95, (y - 519) / 110));
+  // Eyebrows overlap the pink fringe in the original drawing. Keep their whole
+  // strokes attached to the face, with enough falloff for the stronger sway.
+  const browGuard = (cx, cy, rx, ry) => smooth(0, 30, Math.hypot(Math.max(0, Math.abs(x-cx)-rx), Math.max(0, Math.abs(y-cy)-ry)));
+  const brows = browGuard(400, 422, 28, 10) * browGuard(589, 389, 55, 10)
+    * browGuard(641, 414, 30, 10);
+  for (const index of [1, 2, 10]) weights[index] *= eyes * brows;
   return weights;
 }
 
@@ -60,8 +65,8 @@ export function jointPose(time = 0, enabled = true) {
   const t = Number.isFinite(time) ? time : 0;
   return new Float32Array([
     Math.sin(t * .92) * .0045,
-    Math.sin(t * .94 - .4) * .033,
-    Math.sin(t * .89 + .65) * .035,
+    Math.sin(t * .94 - .4) * .055,
+    Math.sin(t * .89 + .65) * .058,
     Math.sin(t * 1.05 - .85) * .038 + Math.sin(t * 1.72) * .006,
     Math.sin(t * 1.05 - 1.2) * .034,
     // About 7 seconds per cycle, with different phases for fabric and feet.
@@ -71,8 +76,10 @@ export function jointPose(time = 0, enabled = true) {
     Math.sin(t * .88 - .35) * .050,
     Math.sin(t * .90 - .4) * .0655,
     Math.sin(t * .86 + 1.15) * -.070,
-    Math.sin(t * .92 - .25) * .037,
-    Math.sin(t * .88 + 1.1) * .028,
+    // A wider, softly attached fringe arc stays legible at desktop size.
+    // Its guarded tip travels about 10.5 px in the default 420 px window.
+    Math.sin(t * .92 - .25) * .105,
+    Math.sin(t * .88 + 1.1) * .042,
   ]);
 }
 

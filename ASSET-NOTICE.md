@@ -2,7 +2,7 @@
 
 本仓库的原创程序代码、脚本、配置和文字文档使用 [MIT License](LICENSE)。以下角色美术及其衍生预览不在 MIT 授权范围内：
 
-- `assets/v3/*.png`、`assets/v4/*.png`、`assets/v5/*.png`：按用户提供的爱莉希雅参考图片，经图像生成工具重绘或编辑的桌宠素材。
+- `assets/v3/*.png`、`assets/v4/*.png`、`assets/v5/*.png`、`assets/v6/*.png`：按用户提供的爱莉希雅参考图片，经图像生成工具重绘或编辑的桌宠素材。
 - `docs/media/`：使用上述素材生成的运行截图和动画预览。
 - 发布包中包含的相同角色素材。
 
@@ -16,4 +16,4 @@ Electron、Chromium、Node.js 及其他依赖保留其各自许可证；构建�
 
 ## English summary
 
-The MIT license applies to this project's original source code, scripts, configuration, and textual documentation. Character artwork in `assets/v3`, `assets/v4`, and `assets/v5`, derived previews in `docs/media`, and the same artwork bundled in releases are excluded. These images were redrawn or edited with an image-generation tool from user-provided Elysia references. Character, original illustration, and trademark rights remain with their respective owners. This unofficial project does not grant a separate license to those third-party rights or imply official endorsement. Dependencies retain their own licenses.
+The MIT license applies to this project's original source code, scripts, configuration, and textual documentation. Character artwork in `assets/v3`, `assets/v4`, `assets/v5`, and `assets/v6`, derived previews in `docs/media`, and the same artwork bundled in releases are excluded. These images were redrawn or edited with an image-generation tool from user-provided Elysia references. Character, original illustration, and trademark rights remain with their respective owners. This unofficial project does not grant a separate license to those third-party rights or imply official endorsement. Dependencies retain their own licenses.

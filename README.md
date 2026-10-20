@@ -6,6 +6,12 @@
 
 [观看 6 秒待机动画](docs/media/idle.webm)
 
+## 0.6.0 更新
+
+- 所有闭眼状态统一采用用户确认的参考眼形：自然睫毛弧、紫色星点和圆点高光，以及紧贴眼缘的细折线。睡觉、眯眯眼、摸头、眯眼笑、Wink 闭眼侧、自动眨眼与喇叭共用同一闭眼素材；伤心眼改为贴近眼角的短泪。
+- 普通表情共用同一身体，切换时衣服与丝袜不再忽深忽浅；奶茶、蛋糕、猫猫与喇叭姿势也统一深蓝裙和丝袜的主色，保留原有阴影。
+- 加大刘海和两侧头发的慢摆幅度，保持眉眼稳定，以及原有衣摆、腿部动作。
+
 ## 下载与使用
 
 从 [GitHub Releases](https://github.com/ActorF/Elysia-Standalone-Pet/releases) 下载 Windows 便携版 `.exe`，双击运行，无需安装 Node.js。更新前请先从旧版右键菜单退出。
@@ -54,6 +60,7 @@ npm test
 npm run test:smoke
 npm run test:visual
 npm run test:faces
+node scripts/outfit-integrity-check.cjs
 
 npm run package
 npm run make:portable

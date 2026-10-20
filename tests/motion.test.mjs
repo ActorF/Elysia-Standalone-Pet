@@ -9,9 +9,9 @@ test('hair, fabric and legs keep moving with a stationary cursor, and can be dis
   for (let joint = 0; joint < frames[0].length; joint++) {
     const values = frames.map(frame => frame[joint]);
     assert.ok(Math.max(...values) - Math.min(...values) > .005, `Joint ${joint} must visibly move while idle`);
-    const limit = joint < 5 ? .05 : .075;
+    const limit = joint === 10 ? .11 : joint === 1 || joint === 2 ? .06 : .075;
     assert.ok(values.every(value => Number.isFinite(value) && Math.abs(value) < limit), 'Idle rotation must remain gentle');
-    assert.ok(values.slice(1).every((value, i) => Math.abs(value - values[i]) < .003), 'No discontinuous jumps between frames');
+    assert.ok(values.slice(1).every((value, i) => Math.abs(value - values[i]) < .0035), 'No discontinuous jumps between frames');
   }
   assert.ok([...jointPose(2.3, false)].every(value => value === 0));
 });
@@ -53,7 +53,7 @@ test('hair and lower-body motion keep the entire mesh connected and facing forwa
   // An inverted triangle would fold an edge even without a topological gap.
   const nx=66, ny=88, dx=1090/nx, dy=1443/ny;
   const area = (a,b,c) => ((b[0]-a[0])*(c[1]-a[1])-(c[0]-a[0])*(b[1]-a[1]))/(dx*dy);
-  for (let time=0; time<8; time+=.5) {
+  for (let time=0; time<8; time+=.2) {
     const rows = Array.from({length:ny+1}, (_,j) => Array.from({length:nx+1}, (_,i) => deformPoint(i*dx,j*dy,time)));
     for (let j=0; j<rows.length-1; j++) for (let i=0; i<nx; i++) {
       const a=rows[j][i], b=rows[j][i+1], c=rows[j+1][i], d=rows[j+1][i+1];
@@ -64,8 +64,8 @@ test('hair and lower-body motion keep the entire mesh connected and facing forwa
 
 test('side locks and fringe have visible independent travel at default pet size', () => {
   for (const [name,point,min,max] of [
-    ['left lock',[200,650],5,10], ['right lock',[920,620],5,10],
-    ['left fringe tip',[500,475],2,5], ['right fringe tip',[530,450],2,5],
+    ['left lock',[200,650],12,18], ['right lock',[920,620],12,18],
+    ['left fringe tip',[500,475],8,12], ['right fringe tip',[530,450],8,12],
   ]) {
     const xs=Array.from({length:241},(_,frame)=>deformPoint(...point,frame/30)[0]);
     const pixels=(Math.max(...xs)-Math.min(...xs))*.336;
@@ -73,8 +73,16 @@ test('side locks and fringe have visible independent travel at default pet size'
   }
 });
 
-test('hair joints leave eyes, facial features and the fringe root on the rigid head', () => {
+test('hair joints leave eyes, eyebrows, facial features and the fringe root on the rigid head', () => {
   const points=[[500,300],[413,555],[647,520],[350,515],[450,510],[590,465],[710,510],[531,587],[535,639],[367,619],[667,603]];
+  // Sample whole visible brow spans, not just their centres: the original fine
+  // brow marks partly cross the fringe, and expressive brows sit closer to eyes.
+  for (let x=375;x<=425;x+=5) points.push([x,422]);
+  for (let x=540;x<=640;x+=5) points.push([x,389]);
+  for (let x=380;x<=440;x+=5) points.push([x,505]);
+  for (let x=610;x<=680;x+=5) points.push([x,462]);
+  for (let x=370;x<=404;x+=5) for(let y=450;y<=475;y+=5) points.push([x,y]);
+  for (let x=616;x<=665;x+=5) for(let y=409;y<=419;y+=5) points.push([x,y]);
   for(let time=0;time<8;time+=.2){
     const head=jointPose(time)[0],c=Math.cos(head),s=Math.sin(head);
     for(const [x,y] of points){
