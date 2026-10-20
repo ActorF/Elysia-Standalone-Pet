@@ -223,13 +223,13 @@ async function createWindow() {
       const expression = await pet.webContents.executeJavaScript('window.elysiaPreview.snapshot().expression');
       if (expression !== 'blush') throw new Error(`Native Space+1 did not toggle once: ${expression}`);
     }
-    const renderer = await pet.webContents.executeJavaScript(`(async () => ({bridge:typeof window.elysiaDesktop, node:typeof window.require, title:document.title, acceleration:window.elysiaPreview.acceleration, state:await window.elysiaDesktop.getState()}))()`);
+    const renderer = await pet.webContents.executeJavaScript(`(async () => ({bridge:typeof window.elysiaDesktop, node:typeof window.require, title:document.title, rendering:window.elysiaPreview.rendering, state:await window.elysiaDesktop.getState()}))()`);
     const webPreferences = pet.webContents.getLastWebPreferences();
     if (!renderer.state?.settings || renderer.node !== 'undefined' || !webPreferences.sandbox || !webPreferences.contextIsolation || webPreferences.nodeIntegration) {
       throw new Error('Desktop host isolation / preload smoke check failed');
     }
-    if (renderer.acceleration?.normal !== true || renderer.acceleration?.megaphone !== true) {
-      throw new Error('Desktop character WebGL acceleration smoke check failed');
+    if (renderer.rendering?.mode !== 'rigid-layers') {
+      throw new Error('Desktop character layered rendering smoke check failed');
     }
     console.log(JSON.stringify({ smoke: 'ok', nativeSpaceChord: smokeNativeHotkeys ? 'passed-on-own-foreground-window' : 'not-requested', renderer, bounds: pet.getBounds(), security: { sandbox: webPreferences.sandbox, contextIsolation: webPreferences.contextIsolation, nodeIntegration: webPreferences.nodeIntegration } }));
     app.quit();

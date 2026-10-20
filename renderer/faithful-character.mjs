@@ -1,5 +1,5 @@
 /** Independent face, action and skin composition; continuous motion runs after composition. */
-import { createMeshRig } from './mesh-rig.mjs';
+import { createLayeredRig } from './layered-rig.mjs';
 import { harmonizePoseOutfit } from './outfit-palette.mjs';
 import { ellipse, path } from './drawing-primitives.mjs';
 const INK = '#4a203d', W = 1090, H = 1443;
@@ -84,7 +84,8 @@ function heartDetails(ctx,image) {
 }
 
 function catSkin(ctx,image) {
-  // Only the two ears/crown and the tail belong to the skin. No neutral hands,
+  // Only the two ears/crown belong to this source overlay. The complete tail
+  // is a separate outlined layer behind the cloak. No neutral hands,
   // face or clothing from the cat source can overwrite the selected action.
   const skin=makeCanvas(), sc=skin.getContext('2d');
   sc.drawImage(image,0,0,W,H);
@@ -93,13 +94,12 @@ function catSkin(ctx,image) {
   const fade=mc.createLinearGradient(0,276,0,322);
   fade.addColorStop(0,'#fff');fade.addColorStop(1,'#ffffff00');
   mc.fillStyle=fade;mc.fillRect(0,0,W,322);
-  path(mc,[['moveTo',802,1083],['quadraticCurveTo',873,1151,961,1107],['quadraticCurveTo',1011,1084,978,1044],['quadraticCurveTo',958,1003,993,987],['quadraticCurveTo',1037,972,1074,1021],['quadraticCurveTo',1116,1098,1071,1160],['quadraticCurveTo',1014,1242,899,1198],['quadraticCurveTo',830,1175,802,1116],['closePath']],null,0,'#fff');
   sc.drawImage(mask,0,0);ctx.drawImage(skin,0,0);
 }
 
 /** Source composition is shared by the runtime, screenshots and pixel audits. */
 export function composeCharacterFrame(images,state,blink=false) {
-  const {expression=null,pose='idle',cat=false,glasses:wearGlasses=false}=state;
+  const {expression=null,pose='idle',cat=false}=state;
   const canvas=makeCanvas(),ctx=canvas.getContext('2d');
   const base=pose==='idle'?images.neutral:images[pose];
   ctx.drawImage(base,0,0,W,H);
@@ -117,10 +117,8 @@ export function composeCharacterFrame(images,state,blink=false) {
   } else if(pose==='megaphone')facePatch(ctx,images.closed,false,'both',pose,true);
   if(blink)facePatch(ctx,images.closed,false,'both',pose,pose==='megaphone');
   if(cat)catSkin(ctx,images.cat);
-  if(wearGlasses) {
-    const layer=makeCanvas();glasses(layer.getContext('2d'));
-    facePatch(ctx,layer,true,'both',pose);
-  }
+  // Glasses are a complete fixed plane in the renderer, behind hair and props.
+  // Keeping them out of the face cutout prevents clipped rims and gaze distortion.
   return canvas;
 }
 
@@ -132,6 +130,7 @@ export async function loadCharacter() {
     closed:'v6/character-closed',cry:'v6/character-cry',heart:'v5/character-heart',surprise:'v4/character-surprise',
     sleep:'v7/character-sleep',angry:'v7/character-angry',dizzy:'v7/character-dizzy',
     sleepDecoration:'v7/sleep-decoration',dizzyDecoration:'v7/dizzy-decoration',
+    frontHair:'v8/front-hair',headUnderlay:'v8/head-underlay-body',tail:'v8/cat-tail',backHair:'v8/back-hair',
   };
   const images={};
   await Promise.all(Object.entries(sources).map(async([key,name])=>{
@@ -141,8 +140,9 @@ export async function loadCharacter() {
   const normalize=image=>{const c=makeCanvas();c.getContext('2d').drawImage(image,0,0,W,H);return c;};
   const neutral=normalize(images.neutral);
   for(const id of ['tea','cake','cat','megaphone'])images[id]=harmonizePoseOutfit(normalize(images[id]),neutral);
-  const mesh=createMeshRig();
-  return {images,mesh,cache:new Map(),normal:mesh,megaphone:mesh};
+  images.glassesFrame=makeCanvas();glasses(images.glassesFrame.getContext('2d'));
+  const renderer=createLayeredRig(images);
+  return {images,renderer,cache:new Map()};
 }
 
 /** Every face/action/skin combination has its own bounded cached composition. */
@@ -156,7 +156,7 @@ export function drawCharacter(ctx,rigs,state,settings={}) {
     if(rigs.cache.size>12)rigs.cache.delete(rigs.cache.keys().next().value);
   }
   const gaze=!blink&&!NO_BLINK.has(expression)&&!(pose==='megaphone'&&!expression);
-  const frame=rigs.mesh.draw(source,key,state,settings,gaze);
+  const frame=rigs.renderer.draw(source,key,state,settings,gaze);
   ctx.clearRect(0,0,600,800);
   ctx.save();ctx.translate(RIG.x,RIG.y);ctx.scale(RIG.scale,RIG.scale);
   ctx.drawImage(frame,0,0,W,H);ctx.restore();

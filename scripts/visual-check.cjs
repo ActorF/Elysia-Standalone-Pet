@@ -93,7 +93,7 @@ const server = createServer((request, response) => {
     await page.waitForTimeout(200);
     const gaze = await page.evaluate(() => window.elysiaPreview.snapshot().gaze);
     assert.ok(gaze.x > 0 && gaze.y < 0);
-    assert.equal(await page.evaluate(() => window.elysiaPreview.acceleration.normal), true);
+    assert.equal(await page.evaluate(() => window.elysiaPreview.rendering.mode), 'rigid-layers');
     await page.screenshot({ path: path.join(destination, 'pet-live.png'), omitBackground: true });
     assert.deepEqual(errors, []);
     // Exercise the real renderer against a delayed host bridge. The settings store stays

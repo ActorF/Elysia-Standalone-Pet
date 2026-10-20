@@ -1,7 +1,7 @@
 {
   "name": "elysia-standalone-pet",
   "productName": "Elysia Desktop Pet",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "description": "独立爱莉希雅桌面伙伴",
   "author": "ActorF",
@@ -38,6 +38,7 @@
       "assets/v5/character-heart.png",
       "assets/v6/*.png",
       "assets/v7/*.png",
+      "assets/v8/*.png",
       "assets/original-controls.json",
       "package.json",
       "LICENSE",

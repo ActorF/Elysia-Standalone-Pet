@@ -13,7 +13,7 @@ const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
 const destination = path.join(root, 'artifacts', 'expression-review');
 const requestedResolution = 2;
-const frameTimes = [0, 0.4, 0.8, 1.2, 1.6, 2];
+const frameTimes = [0, 1.52, 3.04, 4.56, 6.08, 7.6];
 const faceCrop = { x: 168, y: 240, width: 262, height: 184 };
 const actions = [
   { id: 'cake', label: '吃蛋糕：盘与手、叉子与手臂、入口位置', crop: { x: 115, y: 260, width: 330, height: 315 } },
@@ -75,7 +75,7 @@ async function captureMotion(page, browser) {
     const mime = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find(type => MediaRecorder.isTypeSupported(type));
     if (!mime) throw new Error('WebM recording is unavailable in this Chromium');
     const stream = canvas.captureStream(30), recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6000000 });
-    const chunks = [], frames = [], targets = [0, 1.2, 2.4, 3.6, 4.8, 6];
+    const chunks = [], frames = [], targets = [0, 1.6, 3.2, 4.8, 6.4, 8];
     recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
     const stopped = new Promise((resolve, reject) => { recorder.onstop = resolve; recorder.onerror = event => reject(event.error || new Error('Recording failed')); });
     recorder.start(1000);
@@ -86,7 +86,7 @@ async function captureMotion(page, browser) {
         while (frames.length < targets.length && elapsed >= targets[frames.length]) {
           frames.push({ requested: targets[frames.length], elapsed, state: window.elysiaPreview.snapshot(), data: canvas.toDataURL() });
         }
-        if (elapsed >= 6) resolve(); else requestAnimationFrame(step);
+        if (elapsed >= 8) resolve(); else requestAnimationFrame(step);
       }
       requestAnimationFrame(step);
     });
@@ -96,7 +96,7 @@ async function captureMotion(page, browser) {
     });
     return { mime, video, frames, width: canvas.width, height: canvas.height };
   });
-  fs.writeFileSync(path.join(destination, 'idle-six-seconds.webm'), Buffer.from(captured.video.split(',')[1], 'base64'));
+  fs.writeFileSync(path.join(destination, 'idle-cycle.webm'), Buffer.from(captured.video.split(',')[1], 'base64'));
   const regions = [
     { id: 'upper-hair', title: '上半头发连续运动：发顶、左右发束与轮廓', x: 95, y: 40, width: 445, height: 285 },
     { id: 'bangs', title: '刘海连续运动：发带连接、发梢与眼部遮挡', x: 175, y: 135, width: 270, height: 210 },
@@ -110,8 +110,8 @@ async function captureMotion(page, browser) {
     savePng(`idle-frame-${index}.png`, frame.data);
     fullEntries.push({ data: frame.data, label: `t = ${frame.elapsed.toFixed(2)} s` });
   }
-  await contactSheet(browser, 'idle-six-seconds.png', '真实连续运行 6 秒：指针固定，只有待机动作',
-    '对应 idle-six-seconds.webm。逐帧检查动作是否沿部件旋转，以及轮廓、接缝是否撕裂或呈波纹。', fullEntries,
+  await contactSheet(browser, 'idle-cycle.png', '真实连续运行 8 秒：指针固定，只有待机动作',
+    '对应 idle-cycle.webm。逐帧检查动作是否沿部件旋转，以及轮廓、接缝是否撕裂或呈波纹。', fullEntries,
     { columns: 3, cellWidth: 368, imageHeight: 480 });
   for (const region of regions) {
     const entries = [];
@@ -130,9 +130,9 @@ async function captureMotion(page, browser) {
     await contactSheet(browser, `idle-${region.id}.png`, region.title, '同一真实运行视频的局部放大；各时间点未重新启动动画。', entries,
       { columns: 3, cellWidth: 368, imageHeight: 365 });
   }
-  const summary = { durationSeconds: 6, mime: captured.mime, width: captured.width, height: captured.height,
+  const summary = { durationSeconds: 8, mime: captured.mime, width: captured.width, height: captured.height,
     frames: captured.frames.map(({ data, ...frame }) => frame), regions, visualReviewRequired: true };
-  fs.writeFileSync(path.join(destination, 'idle-six-seconds.json'), JSON.stringify(summary, null, 2) + '\n');
+  fs.writeFileSync(path.join(destination, 'idle-cycle.json'), JSON.stringify(summary, null, 2) + '\n');
   return summary;
 }
 

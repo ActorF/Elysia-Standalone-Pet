@@ -1,110 +1,29 @@
-/** Regression checks for continuous, cursor-independent idle movement. */
+/** Rigidity regressions: motion must not change limb width, length or painted lines. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { jointPose, deformPoint } from '../renderer/mesh-rig.mjs';
-import { createPetState, advance } from '../renderer/state.mjs';
-
-test('hair, fabric and legs keep moving with a stationary cursor, and can be disabled', () => {
-  const frames = Array.from({ length: 241 }, (_, frame) => jointPose(frame / 30));
-  for (let joint = 0; joint < frames[0].length; joint++) {
-    const values = frames.map(frame => frame[joint]);
-    assert.ok(Math.max(...values) - Math.min(...values) > .005, `Joint ${joint} must visibly move while idle`);
-    const limit = joint === 10 ? .11 : joint === 1 || joint === 2 ? .06 : .075;
-    assert.ok(values.every(value => Number.isFinite(value) && Math.abs(value) < limit), 'Idle rotation must remain gentle');
-    assert.ok(values.slice(1).every((value, i) => Math.abs(value - values[i]) < .0035), 'No discontinuous jumps between frames');
-  }
-  assert.ok([...jointPose(2.3, false)].every(value => value === 0));
+import {LAYERS,layerTransform,transformLayerPoint} from '../renderer/layer-motion.mjs';
+import {createPetState,advance} from '../renderer/state.mjs';
+const times=Array.from({length:457},(_,i)=>i/60);
+const close=(actual,expected,message)=>assert.ok(Math.abs(actual-expected)<1e-9,`${message}: ${actual} != ${expected}`);
+const points={frontHair:[[205,282],[355,558],[507,475],[776,545],[918,570]],backHair:[[792,751],[926,887],[886,1004],[263,1243]],legs:[[430,1130],[515,1130],[454,1210],[548,1210],[515,1350],[580,1350],[639,1250]],skirt:[[411,963],[555,970],[704,1009],[489,1051]],tail:[[810,1095],[981,1111],[1041,1045],[1011,1174]]};
+const distance=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);
+const area=polygon=>polygon.reduce((sum,p,i)=>{const q=polygon[(i+1)%polygon.length];return sum+p[0]*q[1]-q[0]*p[1];},0)/2;
+test('every moving layer is a rotation with unit scale and no shear',()=>{
+  for(const layer of LAYERS)for(const time of times){const {a,b,c,d,e,f}=layerTransform(layer.id,time);assert.ok([a,b,c,d,e,f].every(Number.isFinite));close(a*a+b*b,1,`${layer.id} horizontal scale`);close(c*c+d*d,1,`${layer.id} vertical scale`);close(a*c+b*d,0,`${layer.id} shear`);close(a*d-b*c,1,`${layer.id} signed area ratio`);}
 });
-
-test('whole shoes and loose hems travel visibly in the default 420 by 560 window', () => {
-  // The source is placed at .48 in a 600-wide logical canvas, displayed at 420.
-  const sourceToScreen = .48 * 420 / 600;
-  const landmarks = {
-    leftToe: [534,1357], leftHeel: [492,1334], leftEdge: [573,1352],
-    rightToe: [663,1300], rightHeel: [620,1290], rightEdge: [688,1268],
-    leftCloakHem: [290,1210], rightCloakHem: [815,1188], skirtHem: [420,1060],
-  };
-  for (const [name, point] of Object.entries(landmarks)) {
-    const xs = Array.from({length:241}, (_,frame) => deformPoint(...point, frame/30)[0]);
-    const travel = (Math.max(...xs)-Math.min(...xs))*sourceToScreen;
-    assert.ok(travel >= 8 && travel <= 18, `${name} must move 8–18 screen pixels, got ${travel.toFixed(2)}`);
-    assert.deepEqual(deformPoint(...point, 2.3, false), point, 'Disabling idle movement restores source geometry');
-  }
+test('stocking width, full leg length and all painted layer distances remain constant',()=>{
+  for(const [id,landmarks]of Object.entries(points))for(const time of times){const transformed=landmarks.map(point=>transformLayerPoint(id,point,time));for(let i=0;i<landmarks.length;i++)for(let j=i+1;j<landmarks.length;j++)close(distance(transformed[i],transformed[j]),distance(landmarks[i],landmarks[j]),`${id} points ${i}/${j}`);close(area(transformed),area(landmarks),`${id} polygon area`);}
 });
-
-test('accepted 0.4 fabric and leg trajectories remain unchanged', () => {
-  // Frozen 0.4 source-space landmarks protect the approved lower-body motion
-  // while new hair joints and their eye guards are added elsewhere in the mesh.
-  const snapshots=[
-    [290,1210,.75,291.4758499376705,1210.105727100362],
-    [815,1188,2,826.3614964449665,1186.015382118034],
-    [420,1060,4.25,422.7896325024607,1061.4538007408935],
-    [534,1357,6.5,548.1521131963682,1352.7781558031215],
-    [663,1300,2,667.3764847596658,1298.0997682005188],
-  ];
-  for(const [x,y,time,expectedX,expectedY] of snapshots){
-    const actual=deformPoint(x,y,time);
-    assert.ok(Math.hypot(actual[0]-expectedX,actual[1]-expectedY)<1e-8,`Approved lower-body trajectory changed at ${x},${y}`);
-  }
+test('attachment pivots remain fixed and disabling movement restores exact geometry',()=>{
+  for(const layer of LAYERS)for(const time of times){const actual=transformLayerPoint(layer.id,layer.pivot,time);close(actual[0],layer.pivot[0],`${layer.id} pivot x`);close(actual[1],layer.pivot[1],`${layer.id} pivot y`);assert.deepEqual(layerTransform(layer.id,time,false),{a:1,b:0,c:-0,d:1,e:0,f:0});for(const point of points[layer.id]??[[400,500]])assert.deepEqual(transformLayerPoint(layer.id,point,time,false),point);}
 });
-
-test('hair and lower-body motion keep the entire mesh connected and facing forward', () => {
-  // Check the entire production grid, including fringe/face and hip/skirt joins.
-  // An inverted triangle would fold an edge even without a topological gap.
-  const nx=66, ny=88, dx=1090/nx, dy=1443/ny;
-  const area = (a,b,c) => ((b[0]-a[0])*(c[1]-a[1])-(c[0]-a[0])*(b[1]-a[1]))/(dx*dy);
-  for (const [cat,pose] of [false,true].flatMap(cat=>['idle','megaphone','tea','cake'].map(pose=>[cat,pose]))) for (let time=0; time<8; time+=.2) {
-    const rows = Array.from({length:ny+1}, (_,j) => Array.from({length:nx+1}, (_,i) => deformPoint(i*dx,j*dy,time,true,cat,pose)));
-    for (let j=0; j<rows.length-1; j++) for (let i=0; i<nx; i++) {
-      const a=rows[j][i], b=rows[j][i+1], c=rows[j+1][i], d=rows[j+1][i+1];
-      assert.ok(Math.min(area(a,b,c),area(b,d,c)) > .25, `Folded or collapsed mesh at ${i},${j}, time ${time}, cat ${cat}, pose ${pose}`);
-    }
-  }
+test('faces and ears stay fixed while complete hair and legs swing continuously',()=>{
+  for(const id of ['face','ears'])for(const time of times)for(const point of [[413,555],[647,520],[946,455],[230,130],[830,150]])assert.deepEqual(transformLayerPoint(id,point,time),point);
+  for(const [id,point]of [['frontHair',[776,545]],['backHair',[925,1000]],['legs',[539,1355]],['skirt',[425,1055]],['tail',[1010,1150]]]){const positions=times.map(time=>transformLayerPoint(id,point,time));const travel=(Math.max(...positions.map(p=>p[0]))-Math.min(...positions.map(p=>p[0])))*.336;assert.ok(travel>1.5&&travel<15,`${id} should visibly but gently move at desktop size (${travel.toFixed(2)}px)`);for(let i=1;i<positions.length;i++)assert.ok(distance(positions[i],positions[i-1])<.6,`${id} has a frame jump`);}
 });
-
-test('side locks and fringe have visible independent travel at default pet size', () => {
-  for (const [name,point,min,max] of [
-    ['left lock',[200,650],12,18], ['right lock',[920,620],12,18],
-    ['left fringe tip',[500,475],8,14], ['right fringe tip',[530,450],8,14],
-    ['inner left lock',[365,400],7,13], ['inner right lock',[780,550],9,15],
-    ['left hair beside face',[330,460],5,10], ['right hair beside face',[750,500],5,10],
-  ]) {
-    const xs=Array.from({length:241},(_,frame)=>deformPoint(...point,frame/30)[0]);
-    const pixels=(Math.max(...xs)-Math.min(...xs))*.336;
-    assert.ok(pixels>=min&&pixels<=max,`${name} travel ${pixels.toFixed(2)} px is outside ${min}–${max}`);
-  }
+test('hair pieces follow the same slow direction without alternating local ripples',()=>{
+  const a=times.map(time=>layerTransform('frontHair',time).b),b=times.map(time=>layerTransform('backHair',time).b);const mean=v=>v.reduce((sum,n)=>sum+n,0)/v.length,ma=mean(a),mb=mean(b);const covariance=a.reduce((sum,n,i)=>sum+(n-ma)*(b[i]-mb),0),variance=(v,m)=>v.reduce((sum,n)=>sum+(n-m)**2,0);assert.ok(covariance/Math.sqrt(variance(a,ma)*variance(b,mb))>.97);
 });
-
-test('the face, elf ear and enabled cat ears stay fixed while nearby hair moves', () => {
-  const face=[[413,555],[647,520],[350,515],[450,510],[590,465],[710,510],[531,587],[535,639],[367,619],[667,603]];
-  const ear=[];
-  for(let x=917;x<=962;x+=5)for(let y=425;y<=480;y+=5)ear.push([x,y]);
-  for(let time=0;time<8;time+=.2){
-    for(const point of [...face,...ear])assert.deepEqual(deformPoint(...point,time),point,`Fixed facial/ear point ${point} moved`);
-    for(const point of [[222,110],[230,210],[300,180],[842,70],[825,150],[857,210]]) {
-      assert.deepEqual(deformPoint(...point,time,true,true),point,`Cat ear ${point} moved`);
-    }
-  }
-});
-
-test('all upper hair sections follow one slow arc rather than opposing ripples',()=>{
-  const joints=[1,2,10,11],samples=Array.from({length:241},(_,i)=>jointPose(i/30));
-  for(const joint of joints.slice(1)){
-    const a=samples.map(v=>v[joints[0]]),b=samples.map(v=>v[joint]);
-    const mean=x=>x.reduce((n,v)=>n+v,0)/x.length,ma=mean(a),mb=mean(b);
-    const covariance=a.reduce((n,v,i)=>n+(v-ma)*(b[i]-mb),0);
-    const variance=x=>x.reduce((n,v)=>n+(v-mean(x))**2,0);
-    assert.ok(covariance/Math.sqrt(variance(a)*variance(b))>.98,'Hair sections must swing together with a small tip delay');
-  }
-});
-
-test('sweeping the cursor changes gaze without introducing hair impulses', () => {
-  const still = createPetState(), moving = createPetState();
-  for (let i = 0; i < 360; i++) {
-    moving.target = { x: Math.sin(i * .3) * 6, y: Math.cos(i * .2) * 4 };
-    advance(still, 1 / 60); advance(moving, 1 / 60);
-    assert.equal(still.hair, moving.hair);
-    assert.deepEqual(jointPose(still.time), jointPose(moving.time));
-  }
-  assert.notDeepEqual(still.gaze, moving.gaze);
+test('cursor sweeps move gaze without changing any layer transform',()=>{
+  const still=createPetState(),moving=createPetState();for(let i=0;i<360;i++){moving.target={x:Math.sin(i*.3)*6,y:Math.cos(i*.2)*4};advance(still,1/60);advance(moving,1/60);for(const layer of LAYERS)assert.deepEqual(layerTransform(layer.id,still.time),layerTransform(layer.id,moving.time));}assert.notDeepEqual(still.gaze,moving.gaze);
 });

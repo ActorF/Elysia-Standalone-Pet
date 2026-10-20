@@ -194,7 +194,7 @@ try {
   requestAnimationFrame(frame);
   // Read-only diagnostics make screenshot tests deterministic without exposing Node or arbitrary IPC.
   window.elysiaPreview = {
-    acceleration: { normal: atlas.normal.accelerated, megaphone: atlas.megaphone.accelerated },
+    rendering: { mode: atlas.renderer.mode, eyeTracking: atlas.renderer.eyeTrackingAvailable },
     snapshot: () => JSON.parse(JSON.stringify(state)),
     render: (expressionOrOptions, megaphone = false, time = 0, resolutionScale = 1) => {
       const options = expressionOrOptions && typeof expressionOrOptions === 'object' ? expressionOrOptions : { expression: expressionOrOptions, pose: megaphone ? 'megaphone' : 'idle', time };

@@ -1,0 +1,7 @@
+{
+  "tool": "built-in image_gen; transparent edit",
+  "source": "assets/v3/character-neutral.png",
+  "asset": "assets/v8/back-hair.png",
+  "size": [1089, 1445],
+  "notes": "Rear long hair with occluded continuation filled beneath body. Head and body removed. Used as one continuous rear hair plane with fixed registration (24,48,0.92,0.93). The hidden areas stay connected during rotation; original body pixels are masked separately."
+}

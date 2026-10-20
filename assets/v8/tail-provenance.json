@@ -1,0 +1,9 @@
+{
+  "tool": "built-in image_gen; transparent edit",
+  "source": "assets/v3/character-cat.png",
+  "asset": "assets/v8/cat-tail.png",
+  "size": [1536, 1024],
+  "alphaBoundsInclusive": [74, 93, 1488, 919],
+  "suggestedCharacterBounds": [720, 990, 1088, 1210],
+  "notes": "Complete outlined tail with extended root for overlap behind cloak. Runtime crop registration only. Verified on pale background: no external shadow/halo."
+}
