@@ -99,5 +99,5 @@ export function splitBackLayers(source,images={}){
     hairContext.globalCompositeOperation='destination-in';hairContext.drawImage(mask,0,0);
     hairContext.globalCompositeOperation='source-over';
   }
-  return {body,backHair};
+  return {body,backHair,mask};
 }

@@ -3,7 +3,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 const subscribe = (channel, callback) => {
   if (typeof callback !== 'function') return () => {};
-  const listener = (_event, payload) => callback(payload);
+  const listener = (_event, payload) => {
+    try { callback(payload); }
+    finally { if (channel === 'pet:pointer' && Number.isSafeInteger(payload?.sequence)) ipcRenderer.send('pet:pointer-received', payload.sequence); }
+  };
   ipcRenderer.on(channel, listener);
   return () => ipcRenderer.removeListener(channel, listener);
 };
@@ -15,7 +18,6 @@ contextBridge.exposeInMainWorld('elysiaDesktop', Object.freeze({
   setSettings: (patch) => ipcRenderer.invoke('pet:set-settings', patch),
   setAppearance: (appearance) => ipcRenderer.send('pet:set-appearance', appearance),
   dragStart: () => ipcRenderer.send('pet:drag-start'),
-  dragMove: (delta) => ipcRenderer.send('pet:drag-move', delta),
   dragEnd: () => ipcRenderer.send('pet:drag-end'),
   showMenu: () => ipcRenderer.send('pet:menu'),
   quit: () => ipcRenderer.send('pet:quit'),

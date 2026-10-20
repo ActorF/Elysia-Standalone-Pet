@@ -1,9 +1,11 @@
 /** @fileoverview Connects desktop IPC, expression controls, pointer dragging and the animated canvas. */
 import { EXPRESSIONS, SKINS, POSES, createPetState, applyAction, actionForKey, advance } from './state.mjs';
 import { loadCharacter, drawCharacter, RIG } from './faithful-character.mjs';
+import { createPointerTracking } from './pointer-tracking.mjs';
 
 const desktop = window.elysiaDesktop;
 const state = createPetState();
+const pointerTracking = createPointerTracking(state,RIG);
 const canvas = document.querySelector('#pet');
 const ctx = canvas.getContext('2d');
 const panel = document.querySelector('#controls');
@@ -105,25 +107,19 @@ document.querySelector('#scale').addEventListener('input', event => {
 });
 document.querySelector('#scale').addEventListener('change', event => updateSettings({ scale: Number(event.target.value) }));
 
-function pointer(localX, localY, width, height) {
-  // Canvas uses object-fit: contain; subtract any letterbox before deriving the eye anchor.
-  const scale = Math.min(width / 600, height / 800);
-  const ox = (width - 600 * scale) / 2, oy = (height - 800 * scale) / 2;
-  state.target.x = (localX - ox - RIG.gazeX * scale) / (230 * scale);
-  state.target.y = (localY - oy - RIG.gazeY * scale) / (240 * scale);
-}
-
 canvas.addEventListener('pointermove', event => {
-  if (!desktop) pointer(event.clientX, event.clientY, innerWidth, innerHeight);
-  if (dragging && desktop) {
-    const dx = event.screenX - dragging.x, dy = event.screenY - dragging.y;
-    if (Math.abs(dx) + Math.abs(dy) > 4) dragging.moved = true;
-    desktop.dragMove({ dx, dy });
-  }
+  // Use the newest coalesced hardware point locally as well as in preview.
+  // Waiting for a round trip through the host adds avoidable cursor latency.
+  const samples=event.getCoalescedEvents?.();
+  const latest=samples?.length?samples[samples.length-1]:event;
+  pointerTracking.sample({localX:latest.clientX,localY:latest.clientY,width:innerWidth,height:innerHeight,
+    sampledAt:performance.timeOrigin+latest.timeStamp});
 });
 canvas.addEventListener('pointerdown', event => {
   if (event.button !== 0) return;
-  dragging = { x: event.screenX, y: event.screenY, moved: false };
+  // The host samples the latest native cursor while captured. Sending every
+  // renderer delta would queue obsolete positions during a busy paint.
+  dragging = { pointerId:event.pointerId };
   canvas.setPointerCapture(event.pointerId);
   desktop?.dragStart();
 });
@@ -164,7 +160,7 @@ document.addEventListener('keyup', event => {
 window.addEventListener('blur', () => { spaceHeld = false; spaceTarget = null; if (dragging) desktop?.dragEnd(); dragging = null; });
 
 if (desktop) {
-  desktop.onPointer(event => pointer(event.localX, event.localY, event.width, event.height));
+  desktop.onPointer(event => pointerTracking.sample(event));
   desktop.onAction(act);
   desktop.onSettings(snapshot => { settings = snapshot.settings; hotkeys = snapshot.hotkeys; syncControls(); });
   const snapshot = await desktop.getState();
@@ -176,7 +172,7 @@ if (desktop) {
 syncControls();
 
 try {
-  const atlas = await loadCharacter();
+  const atlas = await loadCharacter(state);
   document.querySelector('#loading').hidden = true;
   // Match canvas backing resolution to the display without changing the rig's logical coordinates.
   const resize = () => {

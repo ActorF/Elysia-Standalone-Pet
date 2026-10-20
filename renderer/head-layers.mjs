@@ -7,6 +7,7 @@ const cut=(source,commands)=>{
   ctx.save();trace(ctx,commands);ctx.clip();ctx.drawImage(source,0,0,W,H);ctx.restore();return result;
 };
 const poly=points=>[['moveTo',...points[0]],...points.slice(1).map(p=>['lineTo',...p]),['closePath']];
+const staticHeadArt=new WeakMap();
 
 // Deliberately inside the old hair ink. The skin beneath is supplied separately,
 // so moving the hair cannot expose a second copy of its stationary contour.
@@ -63,9 +64,11 @@ export function makeHeadForeground(source,pose='idle'){
   return foreground;
 }
 
-/** Cached per-expression cutouts; all returned canvases share original sprite coordinates. */
-export function splitHeadLayers(source,images,state={}){
-  const face=canvas(),fc=face.getContext('2d');
+/** Pose anatomy and empty skin never change during a blink or expression switch. */
+export function createHeadStaticLayers(images,source){
+  let shared=staticHeadArt.get(images);
+  if(!shared){
+  const skin=canvas(),fc=skin.getContext('2d');
   // Only the inpainted forehead is used from the generated underlay; its
   // altered ear/body never replace the original anatomy or outfit.
   // The hidden cheeks need real overlap behind the complete moving locks.
@@ -78,6 +81,17 @@ export function splitHeadLayers(source,images,state={}){
   ]){fc.save();trace(fc,commands);fc.clip();fc.drawImage(images.headUnderlay,offset,0,W,H);fc.restore();}
   const scalp=poly([[300,630],[296,430],[331,260],[473,183],[629,184],[740,267],[747,438],[737,562],[680,620],[575,684],[420,688]]);
   fc.drawImage(cut(images.headUnderlay,scalp),0,0);
+  const catEars=canvas(),cc=catEars.getContext('2d');
+  cc.drawImage(cut(images.cat??source,CAT_LEFT),0,0);cc.drawImage(cut(images.cat??source,CAT_RIGHT),0,0);
+  shared={skin,catEars,emptyCatEars:canvas(),headExclusionMask:makeHeadExclusionMask()};
+  staticHeadArt.set(images,shared);
+  }
+  return {...shared,ears:cut(source,ELF_EAR)};
+}
+
+/** Cached per-expression cutouts; all returned canvases share original sprite coordinates. */
+export function splitHeadLayers(source,images,state={},shared=createHeadStaticLayers(images,source)){
+  const face=canvas(),fc=face.getContext('2d');fc.drawImage(shared.skin,0,0);
   fc.drawImage(cut(source,FACE_SKIN),0,0);
   fc.drawImage(cut(source,LEFT_EYE),0,0);fc.drawImage(cut(source,RIGHT_EYE),0,0);
   // Preserve the full original jaw ink and neck attachment without importing
@@ -96,13 +110,12 @@ export function splitHeadLayers(source,images,state={}){
     // only that ink prevents a fragment of the previous fringe becoming a
     // second stationary line where a brow crosses a strand.
     for(let i=0;i<pixels.data.length;i+=4){
-      const [r,g,b]=pixels.data.slice(i,i+3);
+      const r=pixels.data[i],g=pixels.data[i+1],b=pixels.data[i+2];
       if(r<95||r>225||g<70||g>175||b<95||b>215)pixels.data[i+3]=0;
     }
     bc.putImageData(pixels,340,365);hc.drawImage(brow,0,0);
   }
 
-  const ears=cut(source,ELF_EAR),catEars=canvas();
-  if(state.cat){const cc=catEars.getContext('2d');cc.drawImage(cut(images.cat??source,CAT_LEFT),0,0);cc.drawImage(cut(images.cat??source,CAT_RIGHT),0,0);}
-  return {face,frontHair,ears,catEars,foreground:makeHeadForeground(source,state.pose),headExclusionMask:makeHeadExclusionMask()};
+  return {face,frontHair,ears:shared.ears,catEars:state.cat?shared.catEars:shared.emptyCatEars,
+    foreground:makeHeadForeground(source,state.pose),headExclusionMask:shared.headExclusionMask};
 }

@@ -93,7 +93,7 @@ function smoke(program, consoleRequired) {
     assetFiles: expected.filter(file => file.startsWith('assets/')),
     licenseFiles: expected.filter(file => ['LICENSE', 'ASSET-NOTICE.md'].includes(file)),
     exactFileList: true, exactSourceBytes: true, fileHashes: hashes,
-    smoke: { directoryExitCode: directory.exitCode, portableExitCode: portable.exitCode, renderer: directory.result.renderer, security: directory.result.security, portableLogNote: 'The byte-identical directory build supplies detailed layered-renderer/IPC logs; NSIS forwards the portable smoke child exit code.' },
+    smoke: { directoryExitCode: directory.exitCode, portableExitCode: portable.exitCode, renderer: directory.result.renderer, desktopChecks:directory.result.desktopChecks, security: directory.result.security, portableLogNote: 'The byte-identical directory build supplies detailed layered-renderer/IPC logs; NSIS forwards the portable smoke child exit code.' },
     processes: { previousCount: before.length, previousInstancesPreserved: true, newRemainingProcesses },
     syntheticGlobalInput: false,
   };

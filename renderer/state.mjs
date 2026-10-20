@@ -58,16 +58,22 @@ export function actionForKey(code) {
   return pose ? { type: 'pose', id: pose.id } : null;
 }
 
-/** Smooths global cursor coordinates and advances a damped hair spring independent of frame rate. */
+const gazeCoordinate=value=>Number.isFinite(value)?Math.max(-1,Math.min(1,value)):0;
+
+/** Store just the newest bounded cursor target, never a queue of intermediate motion. */
+export function setGazeTarget(state,x,y){
+  state.target.x=gazeCoordinate(x);state.target.y=gazeCoordinate(y);
+}
+
+/** Apply the latest cursor on this paint; decorative motion keeps its independent clock. */
 export function advance(state, elapsed, settings = {}) {
-  const dt = Math.min(Math.max(elapsed, 0), 0.04);
+  const dt = Number.isFinite(elapsed)?Math.min(Math.max(elapsed, 0), 0.04):0;
   state.time += dt;
   state.actionAge += dt;
-  const smoothing = 1 - Math.exp(-dt * 9);
-  const x = settings.eyeTracking === false ? 0 : Math.max(-1, Math.min(1, state.target.x));
-  const y = settings.eyeTracking === false ? 0 : Math.max(-1, Math.min(1, state.target.y));
-  state.gaze.x += (x - state.gaze.x) * smoothing;
-  state.gaze.y += (y - state.gaze.y) * smoothing;
+  // The former exponential filter took roughly 256 ms to reach 90% of a new
+  // target. Direct sampling responds on the next frame, including reversals.
+  state.gaze.x = settings.eyeTracking === false ? 0 : gazeCoordinate(state.target.x);
+  state.gaze.y = settings.eyeTracking === false ? 0 : gazeCoordinate(state.target.y);
   const targetHair = settings.hairMotion === false ? 0 : Math.sin(state.time * 1.05) * 0.032;
   state.hairVelocity += ((targetHair - state.hair) * 65 - state.hairVelocity * 9) * dt;
   state.hair += state.hairVelocity * dt;

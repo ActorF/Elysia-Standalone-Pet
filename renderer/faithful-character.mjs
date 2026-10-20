@@ -123,7 +123,7 @@ export function composeCharacterFrame(images,state,blink=false) {
 }
 
 /** Loads common artwork once; action clothes are colour matched before use. */
-export async function loadCharacter() {
+export async function loadCharacter(initialState={}) {
   const sources={
     neutral:'v3/character-neutral',clean:'v3/character-face-clean',
     tea:'v3/character-tea',cake:'v3/character-cake',cat:'v3/character-cat',megaphone:'v3/character-megaphone',
@@ -142,19 +142,60 @@ export async function loadCharacter() {
   for(const id of ['tea','cake','cat','megaphone'])images[id]=harmonizePoseOutfit(normalize(images[id]),neutral);
   images.glassesFrame=makeCanvas();glasses(images.glassesFrame.getContext('2d'));
   const renderer=createLayeredRig(images);
-  return {images,renderer,cache:new Map()};
+  const rigs={images,renderer,cache:new Map(),warmKey:null,warmTicket:null};
+  // Material segmentation is independent of expressions. Pay its one-time
+  // cost while loading, never while a cursor move or automatic blink paints.
+  for(const pose of ['idle','megaphone','cake','tea']){
+    renderer.preparePose(pose);
+    await new Promise(resolve=>setTimeout(resolve,0));
+  }
+  prepareCharacter(rigs,initialState);
+  // Initialize the eye texture and drawing surfaces before the first visible
+  // frame so the first real pointer movement does not trigger GPU setup.
+  const entry=characterSource(rigs,initialState,false);
+  const warmed=renderer.draw(entry.source,entry.key,{...initialState,gaze:{x:.001,y:.001}}, {},true);
+  warmed.getContext('2d').getImageData(0,0,1,1);
+  return rigs;
+}
+
+function characterSource(rigs,state,blink){
+  const key=JSON.stringify([state.pose??'idle',state.expression??null,!!state.cat,blink]);
+  // Glasses are drawn separately and do not alter any source-art pixels.
+  let source=rigs.cache.get(key);
+  if(!source){source=composeCharacterFrame(rigs.images,state,blink);rigs.cache.set(key,source);}
+  else {rigs.cache.delete(key);rigs.cache.set(key,source);}
+  if(rigs.cache.size>12)rigs.cache.delete(rigs.cache.keys().next().value);
+  return {key,source};
+}
+
+/** Prepare the current open/closed pair before automatic blinking needs it. */
+export function prepareCharacter(rigs,state={}){
+  for(const blink of [false,true]){
+    if(blink&&(NO_BLINK.has(state.expression)||(state.pose==='megaphone'&&!state.expression)))continue;
+    const entry=characterSource(rigs,state,blink);rigs.renderer.layers(entry.source,entry.key,state);
+  }
+}
+
+function warmBlinkPair(rigs,state){
+  const key=JSON.stringify([state.pose??'idle',state.expression??null,!!state.cat]);
+  if(rigs.warmKey===key)return;
+  rigs.warmKey=key;
+  if(rigs.warmTicket){
+    if(rigs.warmTicket.idle)cancelIdleCallback(rigs.warmTicket.id);else clearTimeout(rigs.warmTicket.id);
+  }
+  const snapshot={pose:state.pose,expression:state.expression,cat:state.cat};
+  const warm=()=>{rigs.warmTicket=null;if(rigs.warmKey===key)prepareCharacter(rigs,snapshot);};
+  rigs.warmTicket=typeof requestIdleCallback==='function'
+    ?{idle:true,id:requestIdleCallback(warm,{timeout:400})}
+    :{idle:false,id:setTimeout(warm,0)};
 }
 
 /** Every face/action/skin combination has its own bounded cached composition. */
 export function drawCharacter(ctx,rigs,state,settings={}) {
   const pose=state.pose??'idle',expression=state.expression??null;
   const blink=state.blink>.72&&!NO_BLINK.has(expression)&&!(pose==='megaphone'&&!expression);
-  const key=JSON.stringify([pose,expression,!!state.cat,!!state.glasses,blink]);
-  let source=rigs.cache.get(key);
-  if(!source){
-    source=composeCharacterFrame(rigs.images,state,blink);rigs.cache.set(key,source);
-    if(rigs.cache.size>12)rigs.cache.delete(rigs.cache.keys().next().value);
-  }
+  const {key,source}=characterSource(rigs,state,blink);
+  warmBlinkPair(rigs,state);
   const gaze=!blink&&!NO_BLINK.has(expression)&&!(pose==='megaphone'&&!expression);
   const frame=rigs.renderer.draw(source,key,state,settings,gaze);
   ctx.clearRect(0,0,600,800);

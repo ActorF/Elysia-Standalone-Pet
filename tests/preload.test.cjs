@@ -36,4 +36,10 @@ test('preload keeps event metadata private and removes subscriptions cleanly', (
   bridge.setAppearance({ cat: true, pose: 'tea' });
   bridge.showMenu();
   assert.deepEqual(invocations, [['pet:set-settings', { clickThrough: true }], ['pet:set-appearance', { cat: true, pose: 'tea' }], ['pet:menu']]);
+  assert.equal(bridge.dragMove, undefined, 'Drag uses native cursor sampling, not renderer delta queues');
+  bridge.dragStart();bridge.dragEnd();
+  assert.deepEqual(invocations.slice(-2), [['pet:drag-start'],['pet:drag-end']]);
+  bridge.onPointer(() => { throw Error('callback failed'); });
+  assert.throws(() => listeners.get('pet:pointer')({}, {sequence:7,sampledAt:100}), /callback failed/);
+  assert.deepEqual(invocations.at(-1), ['pet:pointer-received',7], 'ACK is sent even if a subscriber fails');
 });

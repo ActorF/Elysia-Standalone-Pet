@@ -1,7 +1,8 @@
 /** @fileoverview Tests independent face / pose / skin state, shortcut parity and animation stability. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EXPRESSIONS, SKINS, POSES, createPetState, applyAction, actionForKey, advance } from '../renderer/state.mjs';
+import { EXPRESSIONS, SKINS, POSES, createPetState, applyAction, actionForKey, advance, setGazeTarget } from '../renderer/state.mjs';
+import { createPointerTracking } from '../renderer/pointer-tracking.mjs';
 import hostPolicy from '../electron/host-policy.cjs';
 
 test('number row and keypad map faces; F keys exclusively map skins and poses on both hosts', () => {
@@ -65,4 +66,43 @@ test('cursor and spring stay bounded through long pauses and disabled tracking r
   for (let i = 0; i < 300; i++) advance(state, 1 / 60, { eyeTracking: false, hairMotion: false });
   assert.ok(Math.abs(state.gaze.x) < 1e-5);
   assert.ok(Math.abs(state.hair) < 1e-5);
+});
+
+test('gaze reaches the newest cursor in one paint and reverses without easing or overshoot',()=>{
+  const state=createPetState();
+  for(const target of [{x:1,y:-1},{x:-1,y:1},{x:.17,y:-.28},{x:0,y:0}]){
+    setGazeTarget(state,target.x,target.y);advance(state,1/144);
+    assert.deepEqual(state.gaze,target);
+  }
+  setGazeTarget(state,1,1);advance(state,1/60,{eyeTracking:false});
+  assert.deepEqual(state.gaze,{x:0,y:0},'Disabling tracking centers on the next paint');
+  advance(state,400,{eyeTracking:true});
+  assert.deepEqual(state.gaze,{x:1,y:1},'A long pause applies the latest point, not old motion');
+  setGazeTarget(state,Infinity,NaN);advance(state,NaN);
+  assert.deepEqual(state.gaze,{x:0,y:0});assert.ok(Number.isFinite(state.time));
+});
+
+test('high-frequency cursor bursts retain only their last point and ignore stale host samples',()=>{
+  const state=createPetState(),anchor={gazeX:292,gazeY:326};
+  const tracking=createPointerTracking(state,anchor,()=>10000);
+  for(let i=0;i<1000;i++)tracking.sample({localX:i%2?0:600,localY:i%3?0:800,width:600,height:800,sampledAt:1000+i});
+  advance(state,1/60);
+  assert.deepEqual(state.gaze,{x:-1,y:1});
+  assert.equal(tracking.sample({localX:600,localY:0,width:600,height:800,sampledAt:1998}),false);
+  advance(state,1/60);assert.deepEqual(state.gaze,{x:-1,y:1},'Delayed IPC cannot undo newer local movement');
+  assert.equal(tracking.sample({localX:600,localY:0,width:600,height:800,sampledAt:2001}),true);
+  advance(state,1/60);assert.deepEqual(state.gaze,{x:1,y:-1});
+});
+
+test('cursor mapping keeps its original canvas anchor at every aspect ratio and rejects invalid geometry',()=>{
+  for(const [width,height]of [[420,560],[600,800],[900,800],[600,1000]]){
+    const state=createPetState(),anchor={gazeX:292,gazeY:326};
+    const tracking=createPointerTracking(state,anchor),scale=Math.min(width/600,height/800);
+    assert.equal(tracking.sample({localX:(width-600*scale)/2+292*scale,localY:(height-800*scale)/2+326*scale,width,height,sampledAt:1}),true);
+    advance(state,1/60);assert.deepEqual(state.gaze,{x:0,y:0});
+    for(const malformed of [{width:0},{height:-1},{localX:NaN},{localY:Infinity}]){
+      assert.equal(tracking.sample({localX:0,localY:0,width,height,sampledAt:2,...malformed}),false);
+      advance(state,1/60);assert.deepEqual(state.gaze,{x:0,y:0});
+    }
+  }
 });

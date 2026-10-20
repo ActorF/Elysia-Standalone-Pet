@@ -5,15 +5,18 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { spawn } = require('node:child_process');
-const { DEFAULT_SETTINGS, EXPRESSION_KEYS, SKIN_KEYS, POSE_KEYS, sanitizeAppearance, sanitizeSettings, dimensions, fitBounds, pointerPayload, actionForKey, isLocalResource } = require('./host-policy.cjs');
+const { DEFAULT_SETTINGS, EXPRESSION_KEYS, SKIN_KEYS, POSE_KEYS, sanitizeAppearance, sanitizeSettings, dimensions, freeBounds, restoreBounds, recoverBounds, actionForKey, isLocalResource } = require('./host-policy.cjs');
 const { trayPng } = require('./tray-icon.cjs');
+const {createDesktopPointer,POINTER_INTERVAL_MS}=require('./desktop-pointer.cjs');
+const {createDragLifecycle}=require('./drag-lifecycle.cjs');
+const {createTopmostController}=require('./window-layer.cjs');
 
 const root = path.resolve(__dirname, '..');
 const rendererUrl = pathToFileURL(path.join(root, 'renderer', 'index.html')).href;
 const smokeNativeHotkeys = process.argv.includes('--smoke-native-hotkeys');
 const isSmokeTest = process.argv.includes('--smoke-test') || smokeNativeHotkeys;
 if (isSmokeTest) app.setPath('userData', path.join(app.getPath('temp'), 'elysia-pet-host-smoke'));
-let pet, tray, settingsFile, pointerTimer, saveTimer, dragOrigin, legacyProcess;
+let pet, tray, settingsFile, pointerTimer, saveTimer, desktopPointer, dragLifecycle, topmost, legacyProcess;
 let preferences = { ...DEFAULT_SETTINGS };
 let appearance = sanitizeAppearance();
 let savedPosition = null;
@@ -26,6 +29,20 @@ function send(channel, data) {
 }
 function publishSettings() { send('pet:settings', state()); }
 function action(typeOrAction) { send('pet:action', typeof typeOrAction === 'string' ? { type: typeOrAction } : typeOrAction); }
+function placePet(position) {
+  // Keep the configured DIP size. Recycling getBounds() through setPosition()
+  // can progressively enlarge a frameless window at fractional Windows DPI.
+  const target=freeBounds({...dimensions(preferences.scale),x:position.x,y:position.y});
+  pet.setBounds(target,false);
+  const actual=pet.getBounds(),from=screen.getDisplayMatching(actual),to=screen.getDisplayMatching(target);
+  if(from.id!==to.id&&Math.abs(from.scaleFactor-to.scaleFactor)>.01
+    &&(Math.abs(actual.x-target.x)>2||Math.abs(actual.y-target.y)>2)){
+    // Electron can retain the previous monitor's DPI conversion at a seam.
+    // Cross that seam synchronously, then reapply the exact intended bounds.
+    pet.setBounds(freeBounds({...target,x:target.x+2*(target.x-actual.x),y:target.y+2*(target.y-actual.y)}),false);
+    pet.setBounds(target,false);
+  }
+}
 function saveSettings() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
@@ -51,7 +68,9 @@ function loadSettings() {
 function recover(showControls = true) {
   if (!pet || pet.isDestroyed()) return;
   updateSettings({ clickThrough: false });
+  dragLifecycle?.cancelDrag();
   if (pet.isMinimized()) pet.restore();
+  placePet(recoverBounds(pet.getBounds(), screen.getAllDisplays()));
   pet.show();
   pet.focus();
   if (showControls) action('show-controls');
@@ -60,13 +79,15 @@ function updateSettings(patch) {
   const previous = preferences;
   preferences = sanitizeSettings(patch && typeof patch === 'object' ? patch : {}, preferences);
   if (pet && !pet.isDestroyed()) {
-    pet.setAlwaysOnTop(preferences.alwaysOnTop, 'floating');
+    topmost?.setEnabled(preferences.alwaysOnTop);
+    if (preferences.clickThrough) dragLifecycle?.endDrag();
     pet.setIgnoreMouseEvents(preferences.clickThrough, { forward: true });
     if (preferences.scale !== previous.scale) {
       const old = pet.getBounds();
       const size = dimensions(preferences.scale);
       const bounds = { ...size, x: old.x + old.width - size.width, y: old.y + old.height - size.height };
-      pet.setBounds(fitBounds(bounds, screen.getDisplayMatching(bounds).workArea));
+      dragLifecycle?.cancelDrag();
+      placePet(freeBounds(bounds));
     }
   }
   if (preferences.legacyHotkeys !== previous.legacyHotkeys) configureLegacyHotkeys();
@@ -167,13 +188,9 @@ function registerIpc() {
   ipcMain.handle('pet:get-state', (event) => trusted(event) ? state() : null);
   ipcMain.handle('pet:set-settings', (event, patch) => trusted(event) ? updateSettings(patch) : null);
   ipcMain.on('pet:set-appearance', (event, value) => { if (trusted(event)) appearance = sanitizeAppearance(value); });
-  ipcMain.on('pet:drag-start', (event) => { if (trusted(event) && !preferences.clickThrough) dragOrigin = pet.getBounds(); });
-  ipcMain.on('pet:drag-move', (event, delta) => {
-    if (!trusted(event) || !dragOrigin || !Number.isFinite(delta?.dx) || !Number.isFinite(delta?.dy)) return;
-    const bounds = { ...dragOrigin, x: dragOrigin.x + Math.round(delta.dx), y: dragOrigin.y + Math.round(delta.dy) };
-    pet.setBounds(fitBounds(bounds, screen.getDisplayMatching(bounds).workArea));
-  });
-  ipcMain.on('pet:drag-end', (event) => { if (trusted(event)) { dragOrigin = null; saveSettings(); } });
+  ipcMain.on('pet:pointer-received', (event, sequence) => { if (trusted(event) && Number.isSafeInteger(sequence)) desktopPointer?.acknowledge(sequence); });
+  ipcMain.on('pet:drag-start', (event) => { if (trusted(event) && !preferences.clickThrough) dragLifecycle?.startDrag(); });
+  ipcMain.on('pet:drag-end', (event) => { if (trusted(event)) dragLifecycle?.endDrag(); });
   ipcMain.on('pet:menu', (event) => { if (trusted(event)) showMenu(); });
   ipcMain.on('pet:quit', (event) => { if (trusted(event)) app.quit(); });
 }
@@ -183,25 +200,33 @@ async function createWindow() {
   const size = dimensions(preferences.scale);
   const desired = { ...size, x: savedPosition?.x ?? primary.x + primary.width - size.width - 24, y: savedPosition?.y ?? primary.y + primary.height - size.height - 12 };
   pet = new BrowserWindow({
-    ...fitBounds(desired, screen.getDisplayMatching(desired).workArea),
+    ...restoreBounds(desired, screen.getAllDisplays()),
     show: false, frame: false, thickFrame: false, transparent: true, backgroundColor: '#00000000',
     resizable: false, maximizable: false, fullscreenable: false,
     alwaysOnTop: preferences.alwaysOnTop, skipTaskbar: true, hasShadow: false,
     title: 'Elysia Desktop Pet', icon: nativeImage.createFromBuffer(trayPng()),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, backgroundThrottling: false, devTools: !app.isPackaged },
   });
+  topmost=createTopmostController(pet,{enabled:preferences.alwaysOnTop});
+  desktopPointer=createDesktopPointer({
+    readCursor:()=>screen.getCursorScreenPoint(),getBounds:()=>pet.getBounds(),
+    setPosition:(x,y)=>placePet({x,y}),
+    sendPointer:payload=>send('pet:pointer',payload),onDragEnd:saveSettings,
+  });
+  dragLifecycle=createDragLifecycle({window:pet,pointer:desktopPointer,readCursor:()=>screen.getCursorScreenPoint()});
+  pet.webContents.on('did-finish-load',()=>desktopPointer?.reset());
   pet.setMenu(null);
   pet.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   pet.webContents.on('will-navigate', (event, url) => { if (url !== rendererUrl) event.preventDefault(); });
   pet.webContents.on('will-attach-webview', (event) => event.preventDefault());
   // The renderer owns the character's right-click gesture and sends a single pet:menu IPC.
   pet.on('move', saveSettings);
-  pet.on('closed', () => { pet = null; if (!quitting) app.quit(); });
+  pet.on('closed', () => { dragLifecycle?.dispose();topmost?.dispose();desktopPointer?.reset();pet = null; if (!quitting) app.quit(); });
   pet.once('ready-to-show', () => { if (!isSmokeTest) pet.showInactive(); });
   await pet.loadURL(rendererUrl);
   pointerTimer = setInterval(() => {
-    if (pet && !pet.isDestroyed()) send('pet:pointer', pointerPayload(screen.getCursorScreenPoint(), pet.getBounds()));
-  }, 33);
+    if (pet && !pet.isDestroyed()) desktopPointer.sample();
+  }, POINTER_INTERVAL_MS);
   if (isSmokeTest) {
     await pet.webContents.executeJavaScript(`new Promise((resolve,reject)=>{const deadline=Date.now()+15000;const timer=setInterval(()=>{if(document.documentElement.dataset.ready==='true'){clearInterval(timer);resolve(true)}else if(Date.now()>deadline){clearInterval(timer);reject(new Error('Renderer did not become ready'))}},50)})`);
     if (smokeNativeHotkeys) {
@@ -231,7 +256,8 @@ async function createWindow() {
     if (renderer.rendering?.mode !== 'rigid-layers') {
       throw new Error('Desktop character layered rendering smoke check failed');
     }
-    console.log(JSON.stringify({ smoke: 'ok', nativeSpaceChord: smokeNativeHotkeys ? 'passed-on-own-foreground-window' : 'not-requested', renderer, bounds: pet.getBounds(), security: { sandbox: webPreferences.sandbox, contextIsolation: webPreferences.contextIsolation, nodeIntegration: webPreferences.nodeIntegration } }));
+    const desktopChecks=smokeNativeHotkeys?null:require('./desktop-smoke.cjs').checkDesktopWindow({window:pet,pointer:desktopPointer,topmost,place:placePet,displays:screen.getAllDisplays()});
+    console.log(JSON.stringify({ smoke: 'ok', nativeSpaceChord: smokeNativeHotkeys ? 'passed-on-own-foreground-window' : 'not-requested', renderer, desktopChecks, bounds: pet.getBounds(), security: { sandbox: webPreferences.sandbox, contextIsolation: webPreferences.contextIsolation, nodeIntegration: webPreferences.nodeIntegration } }));
     app.quit();
   }
 }
@@ -256,7 +282,7 @@ else {
     configureAlternateHotkeys();
     configureLegacyHotkeys();
     await createWindow();
-    const constrainToScreen = () => { if (pet && !pet.isDestroyed()) pet.setBounds(fitBounds(pet.getBounds(), screen.getDisplayMatching(pet.getBounds()).workArea)); };
+    const constrainToScreen = () => { if (pet && !pet.isDestroyed()) { dragLifecycle?.cancelDrag();placePet(restoreBounds(pet.getBounds(),screen.getAllDisplays()));topmost?.refresh(); } };
     screen.on('display-removed', constrainToScreen);
     screen.on('display-metrics-changed', constrainToScreen);
   }).catch((error) => { console.error(error); app.exit(1); });
@@ -264,6 +290,9 @@ else {
 app.on('before-quit', () => {
   quitting = true;
   clearInterval(pointerTimer);
+  dragLifecycle?.dispose();
+  topmost?.dispose();
+  desktopPointer?.reset();
   clearTimeout(saveTimer);
   if (pet && !pet.isDestroyed()) {
     try {

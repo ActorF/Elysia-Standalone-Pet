@@ -35,12 +35,54 @@ function dimensions(scale) {
   return { width: Math.round(420 * scale), height: Math.round(560 * scale) };
 }
 
+/** Native integer coordinates, deliberately independent of all monitor edges. */
+function freeBounds(bounds) {
+  const coordinate = value => Math.round(Math.max(-2147483648, Math.min(2147483647, Number.isFinite(value) ? value : 0)));
+  return { ...bounds, x: coordinate(bounds.x), y: coordinate(bounds.y) };
+}
+
+/** Explicit recovery only. Oversize windows keep their size and expose their top-left controls. */
 function fitBounds(bounds, workArea) {
   return {
     ...bounds,
     x: Math.round(Math.min(Math.max(bounds.x, workArea.x), workArea.x + Math.max(0, workArea.width - bounds.width))),
     y: Math.round(Math.min(Math.max(bounds.y, workArea.y), workArea.y + Math.max(0, workArea.height - bounds.height))),
   };
+}
+
+const validArea = area => area && ['x', 'y', 'width', 'height'].every(key => Number.isFinite(area[key])) && area.width > 0 && area.height > 0;
+const physicalArea = display => {
+  const area = display?.bounds ?? display?.workArea ?? display;
+  return validArea(area) ? area : null;
+};
+const overlapArea = (a, b) => Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x))
+  * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+const rectangleDistance = (a, b) => Math.max(0, b.x - a.x - a.width, a.x - b.x - b.width) ** 2
+  + Math.max(0, b.y - a.y - a.height, a.y - b.y - b.height) ** 2;
+const centerDistance = (a, b) => (a.x + a.width / 2 - b.x - b.width / 2) ** 2
+  + (a.y + a.height / 2 - b.y - b.height / 2) ** 2;
+
+/** Bring the pet back to the nearest available work area, even if still partially visible. */
+function recoverBounds(bounds, displays = []) {
+  const desired = freeBounds(bounds);
+  const available = displays.map(display => ({ display, area: physicalArea(display) })).filter(item => item.area);
+  available.sort((a, b) => overlapArea(desired, b.area) - overlapArea(desired, a.area)
+    || rectangleDistance(desired, a.area) - rectangleDistance(desired, b.area)
+    || centerDistance(desired, a.area) - centerDistance(desired, b.area));
+  if (!available.length) return desired;
+  const { display, area } = available[0];
+  return fitBounds(desired, validArea(display.workArea) ? display.workArea : area);
+}
+
+/**
+ * Restart/display-change policy, never the drag policy. Preserve every visible
+ * portion, including taskbar overlap and narrow edge slivers. Only a completely
+ * unreachable saved position (for example on a removed monitor) is recovered.
+ */
+function restoreBounds(bounds, displays = []) {
+  const desired = freeBounds(bounds);
+  return displays.some(display => { const area = physicalArea(display); return area && overlapArea(desired, area) > 0; })
+    ? desired : recoverBounds(desired, displays);
 }
 
 function pointerPayload(point, bounds) {
@@ -69,4 +111,4 @@ function isLocalResource(url, root) {
   } catch { return false; }
 }
 
-module.exports = { DEFAULT_SETTINGS, EXPRESSION_KEYS, SKIN_KEYS, POSE_KEYS, sanitizeAppearance, sanitizeSettings, dimensions, fitBounds, pointerPayload, actionForKey, isLocalResource };
+module.exports = { DEFAULT_SETTINGS, EXPRESSION_KEYS, SKIN_KEYS, POSE_KEYS, sanitizeAppearance, sanitizeSettings, dimensions, freeBounds, fitBounds, restoreBounds, recoverBounds, pointerPayload, actionForKey, isLocalResource };
