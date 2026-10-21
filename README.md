@@ -11,7 +11,7 @@
 
 **下载提示：** 当前版本未进行数字签名。如果 Edge 提示“isn't commonly downloaded（不常下载）”，确认文件来自本仓库发布页后，在下载列表选择 **⋯ → 保留 → 显示更多 → 仍然保留**，等待下载完成。[微软操作说明](https://learn.microsoft.com/en-us/troubleshoot/microsoft-edge/development/download-failures#check-security-and-smartscreen-settings)
 
-`Unconfirmed 数字.crdownload` 是浏览器的临时文件名，正常完成下载后会自动恢复为 `Elysia_desktop_pet-1.0.0.exe`。如果文件已完整下载、SHA256 与上方校验文件一致，但文件名仍不正确，可以将完整文件名改为 **`Elysia_desktop_pet-1.0.0.exe`**（后缀为 `.exe`）。不要将仍在下载或已经中断的 `.crdownload` 文件直接改后缀运行；重命名也不会消除浏览器的信誉提示。
+**下载完成后，如果文件仍叫 `Unconfirmed 数字.crdownload`，可以将后缀改为 `.exe` 使用。** 先在文件资源管理器中显示“文件扩展名”，再将完整文件名改为 **`Elysia_desktop_pet-1.0.0.exe`**，不要保留末尾的 `.crdownload`。此操作只适用于已经完整下载的文件；仍在下载或下载中断时，请先完成下载。
 
 程序运行后，所有设置都在右下角系统托盘的爱莉希雅图标中。若已有桌宠运行，请先从其托盘菜单退出。
 
