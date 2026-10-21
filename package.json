@@ -1,7 +1,7 @@
 {
-  "name": "elysia-standalone-pet",
-  "productName": "Elysia Desktop Pet",
-  "version": "0.8.2",
+  "name": "elysia_desktop_pet",
+  "productName": "爱莉希雅桌宠",
+  "version": "1.0.0",
   "private": true,
   "description": "独立爱莉希雅桌面伙伴",
   "author": "ActorF",
@@ -9,14 +9,15 @@
   "main": "electron/main.cjs",
   "scripts": {
     "start": "node scripts/launch.cjs",
-    "test": "node --test",
+    "test": "node --test tests/*.test.cjs tests/*.test.mjs",
     "package": "electron-builder --dir",
     "make:portable": "electron-builder --win portable",
     "test:smoke": "node scripts/launch.cjs --smoke-test",
     "test:visual": "node scripts/visual-check.cjs",
     "test:faces": "node scripts/face-integrity-check.cjs",
-    "preview:expressions": "node scripts/expression-review.cjs && node scripts/revision-preview.cjs",
-    "preview:motion": "node scripts/expression-review.cjs --motion-only"
+    "preview:expressions": "node scripts/gallery-preview.cjs",
+    "preview:motion": "node scripts/gallery-preview.cjs --motion",
+    "test:zoom": "node scripts/tray-zoom-check.cjs"
   },
   "devDependencies": {
     "electron": "43.8.0",
@@ -25,7 +26,7 @@
   },
   "build": {
     "appId": "io.actorf.elysia.standalonepet",
-    "productName": "Elysia Desktop Pet",
+    "productName": "爱莉希雅桌宠",
     "asar": true,
     "directories": {
       "output": "release"
@@ -33,13 +34,7 @@
     "files": [
       "electron/**/*",
       "renderer/**/*",
-      "assets/v3/*.png",
-      "assets/v4/character-surprise.png",
-      "assets/v5/character-heart.png",
-      "assets/v6/*.png",
-      "assets/v7/*.png",
-      "assets/v8/*.png",
-      "assets/original-controls.json",
+      "assets/character/*.png",
       "package.json",
       "LICENSE",
       "ASSET-NOTICE.md"
@@ -52,16 +47,16 @@
       "signAndEditExecutable": false
     },
     "portable": {
-      "artifactName": "Elysia-Desktop-Pet-${version}.exe"
+      "artifactName": "Elysia_desktop_pet-${version}.exe"
     }
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ActorF/Elysia-Standalone-Pet.git"
+    "url": "git+https://github.com/ActorF/Elysia_desktop_pet.git"
   },
-  "homepage": "https://github.com/ActorF/Elysia-Standalone-Pet#readme",
+  "homepage": "https://github.com/ActorF/Elysia_desktop_pet#readme",
   "bugs": {
-    "url": "https://github.com/ActorF/Elysia-Standalone-Pet/issues"
+    "url": "https://github.com/ActorF/Elysia_desktop_pet/issues"
   },
   "engines": {
     "node": ">=22"

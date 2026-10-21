@@ -2,12 +2,12 @@
 'use strict';
 const {freeBounds,pointerPayload}=require('./host-policy.cjs');
 const POINTER_INTERVAL_MS=16,DRAG_INTERVAL_MS=4;
-function createDesktopPointer({readCursor,getBounds,setPosition,sendPointer,onDragEnd=()=>{},onDragState=()=>{},now=Date.now}){
+function createDesktopPointer({readCursor,getBounds,setPosition,sendPointer,onDragEnd=()=>{},onDragState=()=>{},now=Date.now,constrainBounds=freeBounds}){
   let drag=null,sequence=0,pending=null,lastSent=null;
   const valid=point=>point&&Number.isFinite(point.x)&&Number.isFinite(point.y);
   function move(point){
     if(!drag||!valid(point))return;
-    const next=freeBounds({...drag.bounds,x:drag.bounds.x+point.x-drag.point.x,y:drag.bounds.y+point.y-drag.point.y});
+    const next=constrainBounds({...drag.bounds,x:drag.bounds.x+point.x-drag.point.x,y:drag.bounds.y+point.y-drag.point.y});
     const current=getBounds();
     if(next.x!==current.x||next.y!==current.y)setPosition(next.x,next.y);
   }

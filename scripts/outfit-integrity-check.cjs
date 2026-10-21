@@ -47,7 +47,7 @@ const sha256 = file => crypto.createHash('sha256').update(fs.readFileSync(file))
       const makeCanvas = () => { const canvas=document.createElement('canvas');canvas.width=W;canvas.height=H;return canvas; };
       const pixels = canvas => canvas.getContext('2d').getImageData(0,0,W,H).data;
       const load = async name => {
-        const image=new Image();image.src=`/assets/v3/character-${name}.png`;await image.decode();
+        const image=new Image();image.src=`/assets/character/character-${name}.png`;await image.decode();
         const canvas=makeCanvas();canvas.getContext('2d',{willReadFrequently:true}).drawImage(image,0,0,W,H);return canvas;
       };
       function sample(data, rectangle, accepts) {

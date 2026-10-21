@@ -60,13 +60,11 @@ async function contactSheet(browser, filename, title, subtitle, entries, { colum
 
 async function captureMotion(page, browser) {
   await page.setViewportSize({ width: 900, height: 1200 });
-  await page.evaluate(() => {
-    document.querySelector('#reset').click();
-    for (const id of ['hairMotion', 'eyeTracking']) {
-      const input = document.getElementById(id);
-      if (!input.checked) input.click();
-    }
-  });
+  // The desktop has no settings panel. Use the same public shortcut as the tray
+  // action, with the browser preview's default motion and tracking preferences.
+  await page.keyboard.down('Space');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.up('Space');
   // Hold the pointer still, close to the reference eye midpoint throughout capture.
   await page.mouse.move(438, 489);
   await page.waitForTimeout(200);
@@ -213,9 +211,11 @@ async function captureMotion(page, browser) {
     const blinkEntries = [];
     manifest.blinks = [];
     for (const expression of [null, 'glasses', 'blush']) {
+      await page.keyboard.down('Space');
+      await page.keyboard.press('Backspace');
+      if (expression) await page.keyboard.press(expression === 'glasses' ? 'F2' : 'Digit1');
+      await page.keyboard.up('Space');
       const pair = await page.evaluate(async ({ expression, crop }) => {
-        document.querySelector('#reset').click();
-        if (expression) document.querySelector(expression==='glasses'?'[data-skin="glasses"]':`[data-expression="${expression}"]`).click();
         const capture = closed => new Promise((resolve, reject) => {
           const deadline = performance.now() + 12000;
           function check() {

@@ -1,5 +1,5 @@
 /** Independent face, action and skin composition; continuous motion runs after composition. */
-import { createLayeredRig } from './layered-rig.mjs';
+import { createMeshRig } from './mesh-rig.mjs';
 import { harmonizePoseOutfit } from './outfit-palette.mjs';
 import { ellipse, path } from './drawing-primitives.mjs';
 const INK = '#4a203d', W = 1090, H = 1443;
@@ -84,9 +84,12 @@ function heartDetails(ctx,image) {
 }
 
 function catSkin(ctx,image) {
-  // Only the two ears/crown belong to this source overlay. The complete tail
-  // is a separate outlined layer behind the cloak. No neutral hands,
-  // face or clothing from the cat source can overwrite the selected action.
+  // Replace the old tuft, including the transparent opening inside its curl.
+  // Painting source-over alone leaves the neutral curl visible through it.
+  // End inside the shared opaque curl base, before the two source images'
+  // outer hair contours separate; clearing farther down creates a hard step.
+  ctx.clearRect(875,105,90,110);
+  // Only the two ears/crown belong in front of the selected action.
   const skin=makeCanvas(), sc=skin.getContext('2d');
   sc.drawImage(image,0,0,W,H);
   sc.globalCompositeOperation='destination-in';
@@ -95,11 +98,22 @@ function catSkin(ctx,image) {
   fade.addColorStop(0,'#fff');fade.addColorStop(1,'#ffffff00');
   mc.fillStyle=fade;mc.fillRect(0,0,W,322);
   sc.drawImage(mask,0,0);ctx.drawImage(skin,0,0);
+  // Keep the full tail outline inside a loose crop instead of tracing through
+  // its fur with a tight mask. The active cloak and rear hair cover its root;
+  // source clothing cannot paint over the selected action's foreground.
+  ctx.save();ctx.globalCompositeOperation='destination-over';
+  ctx.beginPath();
+  ctx.moveTo(790,1010);ctx.lineTo(845,1010);ctx.lineTo(920,1065);
+  ctx.lineTo(960,1065);ctx.lineTo(960,970);ctx.lineTo(1090,970);
+  ctx.lineTo(1090,1230);ctx.lineTo(870,1230);ctx.lineTo(805,1170);
+  ctx.lineTo(790,1120);ctx.closePath();ctx.clip();
+  ctx.drawImage(image,0,0,W,H);
+  ctx.restore();
 }
 
 /** Source composition is shared by the runtime, screenshots and pixel audits. */
 export function composeCharacterFrame(images,state,blink=false) {
-  const {expression=null,pose='idle',cat=false}=state;
+  const {expression=null,pose='idle',cat=false,glasses:wearGlasses=false}=state;
   const canvas=makeCanvas(),ctx=canvas.getContext('2d');
   const base=pose==='idle'?images.neutral:images[pose];
   ctx.drawImage(base,0,0,W,H);
@@ -117,20 +131,21 @@ export function composeCharacterFrame(images,state,blink=false) {
   } else if(pose==='megaphone')facePatch(ctx,images.closed,false,'both',pose,true);
   if(blink)facePatch(ctx,images.closed,false,'both',pose,pose==='megaphone');
   if(cat)catSkin(ctx,images.cat);
-  // Glasses are a complete fixed plane in the renderer, behind hair and props.
-  // Keeping them out of the face cutout prevents clipped rims and gaze distortion.
+  if(wearGlasses) {
+    const layer=makeCanvas();glasses(layer.getContext('2d'));
+    facePatch(ctx,layer,true,'both',pose);
+  }
   return canvas;
 }
 
 /** Loads common artwork once; action clothes are colour matched before use. */
-export async function loadCharacter(initialState={}) {
+export async function loadCharacter() {
   const sources={
-    neutral:'v3/character-neutral',clean:'v3/character-face-clean',
-    tea:'v3/character-tea',cake:'v3/character-cake',cat:'v3/character-cat',megaphone:'v3/character-megaphone',
-    closed:'v6/character-closed',cry:'v6/character-cry',heart:'v5/character-heart',surprise:'v4/character-surprise',
-    sleep:'v7/character-sleep',angry:'v7/character-angry',dizzy:'v7/character-dizzy',
-    sleepDecoration:'v7/sleep-decoration',dizzyDecoration:'v7/dizzy-decoration',
-    frontHair:'v8/front-hair',headUnderlay:'v8/head-underlay-body',tail:'v8/cat-tail',backHair:'v8/back-hair',
+    neutral:'character/character-neutral',clean:'character/character-face-clean',
+    tea:'character/character-tea',cake:'character/character-cake',cat:'character/character-cat',megaphone:'character/character-megaphone',
+    closed:'character/character-closed',cry:'character/character-cry',heart:'character/character-heart',surprise:'character/character-surprise',
+    sleep:'character/character-sleep',angry:'character/character-angry',dizzy:'character/character-dizzy',
+    sleepDecoration:'character/sleep-decoration',dizzyDecoration:'character/dizzy-decoration',
   };
   const images={};
   await Promise.all(Object.entries(sources).map(async([key,name])=>{
@@ -140,64 +155,22 @@ export async function loadCharacter(initialState={}) {
   const normalize=image=>{const c=makeCanvas();c.getContext('2d').drawImage(image,0,0,W,H);return c;};
   const neutral=normalize(images.neutral);
   for(const id of ['tea','cake','cat','megaphone'])images[id]=harmonizePoseOutfit(normalize(images[id]),neutral);
-  images.glassesFrame=makeCanvas();glasses(images.glassesFrame.getContext('2d'));
-  const renderer=createLayeredRig(images);
-  const rigs={images,renderer,cache:new Map(),warmKey:null,warmTicket:null};
-  // Material segmentation is independent of expressions. Pay its one-time
-  // cost while loading, never while a cursor move or automatic blink paints.
-  for(const pose of ['idle','megaphone','cake','tea']){
-    renderer.preparePose(pose);
-    await new Promise(resolve=>setTimeout(resolve,0));
-  }
-  prepareCharacter(rigs,initialState);
-  // Initialize the eye texture and drawing surfaces before the first visible
-  // frame so the first real pointer movement does not trigger GPU setup.
-  const entry=characterSource(rigs,initialState,false);
-  const warmed=renderer.draw(entry.source,entry.key,{...initialState,gaze:{x:.001,y:.001}}, {},true);
-  warmed.getContext('2d').getImageData(0,0,1,1);
-  return rigs;
-}
-
-function characterSource(rigs,state,blink){
-  const key=JSON.stringify([state.pose??'idle',state.expression??null,!!state.cat,blink]);
-  // Glasses are drawn separately and do not alter any source-art pixels.
-  let source=rigs.cache.get(key);
-  if(!source){source=composeCharacterFrame(rigs.images,state,blink);rigs.cache.set(key,source);}
-  else {rigs.cache.delete(key);rigs.cache.set(key,source);}
-  if(rigs.cache.size>12)rigs.cache.delete(rigs.cache.keys().next().value);
-  return {key,source};
-}
-
-/** Prepare the current open/closed pair before automatic blinking needs it. */
-export function prepareCharacter(rigs,state={}){
-  for(const blink of [false,true]){
-    if(blink&&(NO_BLINK.has(state.expression)||(state.pose==='megaphone'&&!state.expression)))continue;
-    const entry=characterSource(rigs,state,blink);rigs.renderer.layers(entry.source,entry.key,state);
-  }
-}
-
-function warmBlinkPair(rigs,state){
-  const key=JSON.stringify([state.pose??'idle',state.expression??null,!!state.cat]);
-  if(rigs.warmKey===key)return;
-  rigs.warmKey=key;
-  if(rigs.warmTicket){
-    if(rigs.warmTicket.idle)cancelIdleCallback(rigs.warmTicket.id);else clearTimeout(rigs.warmTicket.id);
-  }
-  const snapshot={pose:state.pose,expression:state.expression,cat:state.cat};
-  const warm=()=>{rigs.warmTicket=null;if(rigs.warmKey===key)prepareCharacter(rigs,snapshot);};
-  rigs.warmTicket=typeof requestIdleCallback==='function'
-    ?{idle:true,id:requestIdleCallback(warm,{timeout:400})}
-    :{idle:false,id:setTimeout(warm,0)};
+  const mesh=createMeshRig();
+  return {images,mesh,renderer:mesh,cache:new Map(),normal:mesh,megaphone:mesh};
 }
 
 /** Every face/action/skin combination has its own bounded cached composition. */
 export function drawCharacter(ctx,rigs,state,settings={}) {
   const pose=state.pose??'idle',expression=state.expression??null;
   const blink=state.blink>.72&&!NO_BLINK.has(expression)&&!(pose==='megaphone'&&!expression);
-  const {key,source}=characterSource(rigs,state,blink);
-  warmBlinkPair(rigs,state);
+  const key=JSON.stringify([pose,expression,!!state.cat,!!state.glasses,blink]);
+  let source=rigs.cache.get(key);
+  if(!source){
+    source=composeCharacterFrame(rigs.images,state,blink);rigs.cache.set(key,source);
+    if(rigs.cache.size>12)rigs.cache.delete(rigs.cache.keys().next().value);
+  }
   const gaze=!blink&&!NO_BLINK.has(expression)&&!(pose==='megaphone'&&!expression);
-  const frame=rigs.renderer.draw(source,key,state,settings,gaze);
+  const frame=rigs.mesh.draw(source,key,state,settings,gaze);
   ctx.clearRect(0,0,600,800);
   ctx.save();ctx.translate(RIG.x,RIG.y);ctx.scale(RIG.scale,RIG.scale);
   ctx.drawImage(frame,0,0,W,H);ctx.restore();

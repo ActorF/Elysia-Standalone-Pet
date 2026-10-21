@@ -1,10 +1,10 @@
 /** Cached native-window silhouette. No live-frame reads or moving-window work. */
-import {RIG} from './faithful-character.mjs';
-import {LAYERS} from './layer-motion.mjs';
+import {RIG,composeCharacterFrame} from './faithful-character.mjs';
+import {EXPRESSIONS} from './state.mjs';
+import {meshAlphaToOccupancy} from './mesh-envelope.mjs';
 
 const WIDTH=600,HEIGHT=800,CELL_SIZE=4;
 const regions=new WeakMap();
-const layerById=new Map(LAYERS.map(layer=>[layer.id,layer]));
 
 /** Quantize alpha conservatively, retaining holes and the empty window margins. */
 export function alphaToOccupancy(rgba,width,height,{cellSize=2,threshold=4,padding=1}={}){
@@ -50,23 +50,21 @@ export function rectanglesFromOccupancy(mask){
  return vertical.length<horizontal.length?vertical:horizontal;
 }
 
-function drawEnvelope(ctx,atlas,state,enabled){
- ctx.save();ctx.translate(RIG.x,RIG.y);ctx.scale(RIG.scale,RIG.scale);
- for(const {image,id}of atlas.renderer.hitLayers(state)){
-  if(!image)continue;
-  const layer=id&&layerById.get(id),amplitude=enabled?(layer?.amplitude??0):0;
-  if(!amplitude){ctx.drawImage(image,0,0);continue;}
-  const [px,py]=layer.pivot;
-  // Every visible point is at most 0.75 logical pixels from a sampled rotation.
-  // The one-pixel dilation below closes that bound, without stretching artwork.
-  const radius=Math.hypot(Math.max(px,RIG.width-px),Math.max(py,RIG.height-py));
-  const intervals=Math.max(2,Math.ceil(radius*amplitude*RIG.scale/.75));
-  for(let step=0;step<=intervals;step++){
-   ctx.save();ctx.translate(px,py);ctx.rotate(-amplitude+2*amplitude*step/intervals);ctx.translate(-px,-py);
-   ctx.drawImage(image,0,0);ctx.restore();
-  }
+function sourceAlpha(atlas,pose,cat){
+ const canvas=document.createElement('canvas');canvas.width=RIG.width;canvas.height=RIG.height;
+ const ctx=canvas.getContext('2d');
+ for(const expression of [null,...EXPRESSIONS.map(item=>item.id)]){
+  // The original composition only adds source-over pixels. Including a blink
+  // and glasses therefore also covers their off states, without repainting or
+  // changing the runtime's frame cache.
+  const source=composeCharacterFrame(atlas.images,{pose,cat,expression,glasses:true},true);
+  ctx.drawImage(source,0,0);source.width=0;source.height=0;
  }
- ctx.restore();
+ const rgba=ctx.getImageData(0,0,RIG.width,RIG.height).data;
+ const alpha=new Uint8Array(RIG.width*RIG.height);
+ for(let i=0;i<alpha.length;i++)alpha[i]=rgba[i*4+3];
+ canvas.width=0;canvas.height=0;
+ return alpha;
 }
 
 function drawDecorations(ctx,images,decoration,enabled){
@@ -88,7 +86,7 @@ function drawDecorations(ctx,images,decoration,enabled){
  * calls return the same object, so frame/position changes never need setShape.
  */
 export function createCharacterHitRegion(atlas,state={},settings={}){
- let cache=regions.get(atlas);if(!cache){cache={results:new Map(),bodies:new Map(),decorations:new Map()};regions.set(atlas,cache);}
+ let cache=regions.get(atlas);if(!cache){cache={results:new Map(),sources:new Map(),bodies:new Map(),decorations:new Map()};regions.set(atlas,cache);}
  const enabled=settings.hairMotion!==false,pose=state.pose??'idle';
  const decoration=['sleep','dizzy'].includes(state.expression)?state.expression:'';
  const bodyKey=`${pose}:${!!state.cat}:${enabled}`,key=`${bodyKey}:${decoration}`;
@@ -101,7 +99,14 @@ export function createCharacterHitRegion(atlas,state={},settings={}){
   return alphaToOccupancy(ctx.getImageData(0,0,WIDTH,HEIGHT).data,WIDTH,HEIGHT,{cellSize:CELL_SIZE});
  };
  let body=cache.bodies.get(bodyKey);
- if(!body){body=readMask(ctx=>drawEnvelope(ctx,atlas,state,enabled));cache.bodies.set(bodyKey,body);}
+ if(!body){
+  const sourceKey=`${pose}:${!!state.cat}`;
+  let alpha=cache.sources.get(sourceKey);
+  if(!alpha){alpha=sourceAlpha(atlas,pose,!!state.cat);cache.sources.set(sourceKey,alpha);}
+  body=meshAlphaToOccupancy(alpha,{width:WIDTH,height:HEIGHT,cellSize:CELL_SIZE,padding:1,
+   x:RIG.x,y:RIG.y,scale:RIG.scale,enabled,cat:!!state.cat,pose});
+  cache.bodies.set(bodyKey,body);
+ }
  let mask=body;
  if(decoration){
   const decorKey=`${decoration}:${enabled}`;

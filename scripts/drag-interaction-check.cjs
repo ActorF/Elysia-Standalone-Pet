@@ -75,7 +75,7 @@ const server = createServer((request, response) => {
         setHitRegion: async value => { qa.hitRegions.push(structuredClone(value)); return true; },
         dragStart() { qa.starts++; qa.dragState(true); },
         dragEnd() { qa.ends++; qa.dragState(false); },
-        showMenu() { callbacks.action({ type: 'show-controls' }); },
+        showMenu() { throw new Error('Character interaction must never open a menu'); },
         quit() {},
       };
     }, DEFAULT_SETTINGS);
@@ -148,16 +148,15 @@ const server = createServer((request, response) => {
     assert.equal(resized.clears, 1, 'Actual scale change redraws exactly once while held');
     assert.equal(resized.resets, 2, 'Actual scale change replaces both backing dimensions once');
     assert.equal(resized.time, beforeResize.time);
-    assert.equal(resized.hitRegion.width, 480); assert.equal(resized.hitRegion.height, 640);
+    assert.equal(resized.hitRegion.width, 600); assert.equal(resized.hitRegion.height, 800);
+    assert.equal(resized.hitRegion.space, 'character', 'Shape stays in canonical coordinates across viewport resizing');
     report.checks.push({ name: 'actual viewport resize', ...resized, state: undefined, hitRegion: undefined });
-    await pausedCheck('controls remain interactive while held', async () => {
+    await pausedCheck('removed panel actions stay inert while held', async () => {
       await page.evaluate(() => window.__dragQA.action({ type: 'show-controls' }));
-      await page.waitForFunction(() => !document.querySelector('#controls').hidden);
       await page.waitForTimeout(100);
-      assert.equal(await page.locator('#controls').isVisible(), true);
       await page.evaluate(() => window.__dragQA.action({ type: 'toggle-controls' }));
       await page.waitForTimeout(100);
-      assert.equal(await page.locator('#controls').isHidden(), true);
+      assert.equal(await page.locator('#controls, button, input, .panel').count(), 0, 'Removed panel actions cannot recreate settings UI');
     });
     await resumedCheck('pointer release resumes', () => page.mouse.up());
 

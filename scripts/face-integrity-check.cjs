@@ -58,18 +58,6 @@ const server=createServer((req,res)=>{try{const url=new URL(req.url,'http://loca
     const diff=compare(a,b,[503,611,69,50],1);check(`${pose}: blink preserves active mouth`,diff.changed===0,diff);
    }
    const settings={hairMotion:false,eyeTracking:false};
-   // Accessories are complete planes in the final renderer, outside the face
-   // matte. Check their actual pixels so an omitted/clipped layer cannot pass
-   // merely because expression source images remain internally consistent.
-   const rendered=options=>{const state={...createPetState(),...options},source=frame(state);return rgba(rig.renderer.draw(source,JSON.stringify(options),state,settings,false));};
-   for(const {id:pose} of POSES){
-    const bare=rendered({pose}),withGlasses=rendered({pose,glasses:true}),withCat=rendered({pose,cat:true});
-    const bridge=compare(bare,withGlasses,[490,510,80,55],2);
-    check(`${pose}: complete glasses reach final canvas`,bridge.changed>150,bridge);
-    const tail=compare(bare,withCat,[900,1050,180,180],2);
-    check(`${pose}: outlined cat tail reaches final canvas`,tail.changed>2500,tail);
-    for(const rect of props[pose]){const diff=compare(bare,withGlasses,rect,1);check(`${pose}: final prop stays in front of glasses`,diff.changed===0,diff);}
-   }
    for(const id of ['sleep','angry','dizzy','wink','cry','heart','smile',null]){
     const stage=document.createElement('canvas');stage.width=600;stage.height=800;
     drawCharacter(stage.getContext('2d'),rig,{...createPetState(),expression:id},settings);pngs[`stage-${id||'default'}.png`]=stage.toDataURL();

@@ -5,26 +5,35 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { spawn } = require('node:child_process');
-const { DEFAULT_SETTINGS, EXPRESSION_KEYS, SKIN_KEYS, POSE_KEYS, sanitizeAppearance, sanitizeSettings, dimensions, freeBounds, restoreBounds, recoverBounds, actionForKey, isLocalResource } = require('./host-policy.cjs');
+const { DEFAULT_SETTINGS, EXPRESSION_KEYS, SKIN_KEYS, POSE_KEYS, sanitizeAppearance, sanitizeSettings, freeBounds, restoreBounds, recoverBounds, actionForKey, isLocalResource } = require('./host-policy.cjs');
 const { trayPng } = require('./tray-icon.cjs');
 const {createDesktopPointer,POINTER_INTERVAL_MS,DRAG_INTERVAL_MS}=require('./desktop-pointer.cjs');
 const {createDragLifecycle}=require('./drag-lifecycle.cjs');
 const {createTopmostController}=require('./window-layer.cjs');
 const {createWindowShape}=require('./window-shape.cjs');
+const {virtualBounds,planViewport,viewportSnapshot,zoomAt,zoomFromSteps,projectHitRegion}=require('./pet-viewport.cjs');
+const {trayTemplate}=require('./tray-menu.cjs');
+const {createViewportChannel}=require('./viewport-channel.cjs');
 
 const root = path.resolve(__dirname, '..');
 const rendererUrl = pathToFileURL(path.join(root, 'renderer', 'index.html')).href;
 const smokeNativeHotkeys = process.argv.includes('--smoke-native-hotkeys');
 const isSmokeTest = process.argv.includes('--smoke-test') || smokeNativeHotkeys;
-if (isSmokeTest) app.setPath('userData', path.join(app.getPath('temp'), 'elysia-pet-host-smoke'));
+// Keep the existing preferences and single-instance identity after a display-name change.
+app.setPath('userData', isSmokeTest
+  ? path.join(app.getPath('temp'), 'elysia-pet-host-smoke')
+  : path.join(app.getPath('appData'), 'Elysia Desktop Pet'));
 let pet, tray, settingsFile, pointerTimer, saveTimer, desktopPointer, dragLifecycle, topmost, windowShape, legacyProcess;
 let preferences = { ...DEFAULT_SETTINGS };
 let appearance = sanitizeAppearance();
 let savedPosition = null;
+let characterBounds=null,viewport=null,logicalHitRegion=null,logicalHitRevision=0,projectedHitKey=null;
+let lastNativeTargetKey=null;
+const viewportChannel=createViewportChannel(payload=>send('pet:viewport',payload));
 let quitting = false;
 const hotkeys = { legacy: { active: false, error: null }, alternate: { active: false, failed: [] }, recovery: false };
 
-function state() { return { settings: { ...preferences }, hotkeys: structuredClone(hotkeys) }; }
+function state() { return { settings: { ...preferences }, hotkeys: structuredClone(hotkeys), viewport:viewport?{...viewport}:null }; }
 function send(channel, data) {
   if (pet && !pet.isDestroyed() && !pet.webContents.isDestroyed()) pet.webContents.send(channel, data);
 }
@@ -38,24 +47,33 @@ function pollPointer(dragging=false) {
 function placePet(position) {
   // Keep the configured DIP size. Recycling getBounds() through setPosition()
   // can progressively enlarge a frameless window at fractional Windows DPI.
-  const target=freeBounds({...dimensions(preferences.scale),x:position.x,y:position.y});
-  pet.setBounds(target,false);
-  const actual=pet.getBounds(),from=screen.getDisplayMatching(actual),to=screen.getDisplayMatching(target);
-  if(from.id!==to.id&&Math.abs(from.scaleFactor-to.scaleFactor)>.01
-    &&(Math.abs(actual.x-target.x)>2||Math.abs(actual.y-target.y)>2)){
-    // Electron can retain the previous monitor's DPI conversion at a seam.
-    // Cross that seam synchronously, then reapply the exact intended bounds.
-    pet.setBounds(freeBounds({...target,x:target.x+2*(target.x-actual.x),y:target.y+2*(target.y-actual.y)}),false);
+  characterBounds=virtualBounds(position,preferences.scale);
+  const planned=planViewport(characterBounds,screen.getAllDisplays());
+  const target=freeBounds(planned.native);
+  const to=screen.getDisplayMatching(target),nativeKey=JSON.stringify([target,to.id,to.scaleFactor]);
+  if(nativeKey!==lastNativeTargetKey){
     pet.setBounds(target,false);
+    const actual=pet.getBounds(),from=screen.getDisplayMatching(actual);
+    if(from.id!==to.id&&Math.abs(from.scaleFactor-to.scaleFactor)>.01
+      &&(Math.abs(actual.x-target.x)>2||Math.abs(actual.y-target.y)>2)){
+      // Electron can retain the previous monitor's DPI conversion at a seam.
+      pet.setBounds(freeBounds({...target,x:target.x+2*(target.x-actual.x),y:target.y+2*(target.y-actual.y)}),false);
+      pet.setBounds(target,false);
+    }
+    lastNativeTargetKey=nativeKey;
   }
-  windowShape?.refresh();
+  const content=pet.getContentBounds();
+  const previous=viewport;
+  viewport=viewportSnapshot(characterBounds,content,planned.clipped);
+  if(!previous||['width','height','characterX','characterY','characterWidth','characterHeight','clipped'].some(key=>previous[key]!==viewport[key]))viewportChannel.publish(viewport);
+  applyHitRegion();
 }
 function saveSettings() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     if (!settingsFile) return;
     try {
-      const bounds = pet && !pet.isDestroyed() ? pet.getBounds() : savedPosition;
+      const bounds = characterBounds ?? savedPosition;
       const payload = { settings: preferences, position: bounds ? { x: bounds.x, y: bounds.y } : null };
       fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
       fs.writeFileSync(settingsFile + '.tmp', JSON.stringify(payload, null, 2));
@@ -72,17 +90,16 @@ function loadSettings() {
   // A fresh launch is always interactive; the tray can re-enable click-through.
   preferences.clickThrough = false;
 }
-function recover(showControls = true) {
+function recover(resetScale = false) {
   if (!pet || pet.isDestroyed()) return;
-  updateSettings({ clickThrough: false });
+  updateSettings({ clickThrough: false, ...(resetScale?{scale:1}:{}) });
   dragLifecycle?.cancelDrag();
   if (pet.isMinimized()) pet.restore();
-  placePet(recoverBounds(pet.getBounds(), screen.getAllDisplays()));
+  placePet(recoverBounds(characterBounds??pet.getBounds(), screen.getAllDisplays(),bounds=>bounds));
   pet.show();
   pet.focus();
-  if (showControls) action('show-controls');
 }
-function updateSettings(patch) {
+function updateSettings(patch, anchor) {
   const previous = preferences;
   preferences = sanitizeSettings(patch && typeof patch === 'object' ? patch : {}, preferences);
   if (pet && !pet.isDestroyed()) {
@@ -90,11 +107,10 @@ function updateSettings(patch) {
     if (preferences.clickThrough) dragLifecycle?.endDrag();
     pet.setIgnoreMouseEvents(preferences.clickThrough, { forward: true });
     if (preferences.scale !== previous.scale) {
-      const old = pet.getBounds();
-      const size = dimensions(preferences.scale);
-      const bounds = { ...size, x: old.x + old.width - size.width, y: old.y + old.height - size.height };
+      const old = characterBounds??pet.getBounds();
+      const {bounds}=zoomAt(old,previous.scale,preferences.scale,anchor);
       dragLifecycle?.cancelDrag();
-      placePet(freeBounds(bounds));
+      placePet(bounds);
     }
   }
   if (preferences.legacyHotkeys !== previous.legacyHotkeys) configureLegacyHotkeys();
@@ -102,6 +118,28 @@ function updateSettings(patch) {
   saveSettings();
   publishSettings();
   return state();
+}
+
+function resizePet(scale) {
+  const bounds=viewport?.clipped?pet?.getContentBounds():characterBounds;
+  return updateSettings({scale},bounds?{x:bounds.x+bounds.width/2,y:bounds.y+bounds.height/2}:null);
+}
+function zoomPet(input) {
+  if(!input||!Number.isFinite(input.steps)||!pet||pet.isDestroyed())return state();
+  const bounds=pet.getContentBounds();
+  const anchor=Number.isFinite(input.anchorX)&&Number.isFinite(input.anchorY)
+    ?{x:bounds.x+input.anchorX,y:bounds.y+input.anchorY}:screen.getCursorScreenPoint();
+  const next=zoomFromSteps(characterBounds??bounds,preferences.scale,input.steps,anchor);
+  return updateSettings({scale:next.scale},anchor);
+}
+
+function applyHitRegion() {
+  if(!logicalHitRegion||!viewport)return windowShape?.refresh();
+  const key=JSON.stringify([logicalHitRevision,viewport.width,viewport.height,viewport.characterX,viewport.characterY,viewport.characterWidth,viewport.characterHeight]);
+  if(projectedHitKey===key)return windowShape?.refresh();
+  const applied=windowShape?.update(projectHitRegion(logicalHitRegion,viewport))??false;
+  if(applied)projectedHitKey=key;
+  return applied;
 }
 
 function configureLegacyHotkeys() {
@@ -165,71 +203,70 @@ function configureAlternateHotkeys() {
   hotkeys.alternate.active = alternateBindings.length > 0;
 }
 
-const labels = {
-  glasses: '眼镜', blush: '害羞', angry: '生气', sleep: '睡觉', surprise: '惊讶',
-  dizzy: '晕', wink: 'Wink', cry: '伤心', heart: '爱心眼', smile: '微笑',
-  cat: '猫猫形态', idle: '日常待机', megaphone: '听我说呀！', cake: '吃蛋糕', tea: '喝奶茶', awkward: '囧',
-};
 function buildMenu() {
-  return Menu.buildFromTemplate([
-    { label: '显示 / 恢复操作 (Ctrl+Alt+P)', click: () => recover() },
-    { label: '表情说明与设置', click: () => { recover(false); action('show-controls'); } },
-    { label: '表情（数字区）', submenu: Object.entries(EXPRESSION_KEYS).map(([key, id]) => ({ label: `${labels[id]}  Space+${key}`, type: 'checkbox', checked: appearance.expression === id, click: () => action({ type: 'expression', id }) })) },
-    { label: '装扮开关（F1–F2）', submenu: Object.entries(SKIN_KEYS).map(([key, id]) => ({ label: `${labels[id]}  Space+${key}`, type: 'checkbox', checked: appearance[id], click: () => action({ type: 'toggle-skin', id }) })) },
-    { label: '动作四选一（F3–F6）', submenu: Object.entries(POSE_KEYS).map(([key, id]) => ({ label: `${labels[id]}  Space+${key}`, type: 'radio', checked: appearance.pose === id, click: () => action({ type: 'pose', id }) })) },
-    { label: '全部重置 (Space+Backspace)', click: () => action('reset') },
-    { type: 'separator' },
-    { label: '始终置顶', type: 'checkbox', checked: preferences.alwaysOnTop, click: (item) => updateSettings({ alwaysOnTop: item.checked }) },
-    { label: '点击穿透（托盘或 Ctrl+Alt+P 恢复）', type: 'checkbox', checked: preferences.clickThrough, click: (item) => updateSettings({ clickThrough: item.checked }) },
-    { label: 'Space 全局组合键', type: 'checkbox', checked: preferences.legacyHotkeys, click: (item) => updateSettings({ legacyHotkeys: item.checked }) },
-    { label: '备用 Ctrl+Alt 全局组合键', type: 'checkbox', checked: preferences.alternateHotkeys, click: (item) => updateSettings({ alternateHotkeys: item.checked }) },
-    { label: '大小', submenu: [0.6, 0.8, 1, 1.2, 1.4, 1.6].map((scale) => ({ label: `${Math.round(scale * 100)}%`, type: 'radio', checked: preferences.scale === scale, click: () => updateSettings({ scale }) })) },
-    { type: 'separator' },
-    { label: '退出桌宠', click: () => app.quit() },
-  ]);
+  return Menu.buildFromTemplate(trayTemplate({settings:preferences,appearance,action,updateSettings,recover,resize:resizePet,quit:()=>app.quit()}));
 }
-function showMenu() { buildMenu().popup({ window: pet }); }
 
 function registerIpc() {
   const trusted = (event) => pet && !pet.isDestroyed() && event.sender === pet.webContents && event.senderFrame === pet.webContents.mainFrame;
   ipcMain.handle('pet:get-state', (event) => trusted(event) ? state() : null);
   ipcMain.handle('pet:set-settings', (event, patch) => trusted(event) ? updateSettings(patch) : null);
-  ipcMain.handle('pet:set-hit-region', (event, region) => trusted(event) ? windowShape?.update(region)??false : false);
+  ipcMain.handle('pet:zoom-by', (event, input) => trusted(event) ? zoomPet(input) : null);
+  ipcMain.handle('pet:set-hit-region', (event, region) => {
+    if(!trusted(event))return false;
+    if(region?.space==='character'){
+      const clean=require('./window-shape.cjs').sanitizePacket(region);
+      if(!clean)return false;
+      logicalHitRegion=clean;logicalHitRevision++;return applyHitRegion();
+    }
+    logicalHitRegion=null;return windowShape?.update(region)??false;
+  });
   ipcMain.on('pet:set-appearance', (event, value) => { if (trusted(event)) appearance = sanitizeAppearance(value); });
   ipcMain.on('pet:pointer-received', (event, sequence) => { if (trusted(event) && Number.isSafeInteger(sequence)) desktopPointer?.acknowledge(sequence); });
+  ipcMain.on('pet:viewport-received',(event,sequence)=>{
+    if(trusted(event)&&Number.isSafeInteger(sequence))viewportChannel.acknowledge(sequence);
+  });
   ipcMain.on('pet:drag-start', (event) => { if (trusted(event) && (preferences.clickThrough||!dragLifecycle?.startDrag())) send('pet:drag-state',false); });
   ipcMain.on('pet:drag-end', (event) => { if (trusted(event)) dragLifecycle?.endDrag(); });
-  ipcMain.on('pet:menu', (event) => { if (trusted(event)) showMenu(); });
   ipcMain.on('pet:quit', (event) => { if (trusted(event)) app.quit(); });
 }
 
 async function createWindow() {
   const primary = screen.getPrimaryDisplay().workArea;
-  const size = dimensions(preferences.scale);
+  const size = virtualBounds({},preferences.scale);
   const desired = { ...size, x: savedPosition?.x ?? primary.x + primary.width - size.width - 24, y: savedPosition?.y ?? primary.y + primary.height - size.height - 12 };
+  characterBounds=restoreBounds(desired, screen.getAllDisplays(),bounds=>bounds);
+  const planned=planViewport(characterBounds,screen.getAllDisplays());
   pet = new BrowserWindow({
-    ...restoreBounds(desired, screen.getAllDisplays()),
+    ...planned.native,
     show: false, frame: false, thickFrame: false, transparent: true, backgroundColor: '#00000000',
     resizable: false, maximizable: false, fullscreenable: false,
     alwaysOnTop: preferences.alwaysOnTop, skipTaskbar: true, hasShadow: false,
-    title: 'Elysia Desktop Pet', icon: nativeImage.createFromBuffer(trayPng()),
+    title: '爱莉希雅桌宠 / Elysia_desktop_pet', icon: nativeImage.createFromBuffer(trayPng()),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, backgroundThrottling: false, devTools: !app.isPackaged },
   });
   topmost=createTopmostController(pet,{enabled:preferences.alwaysOnTop});
   windowShape=createWindowShape(pet,{screen});
+  viewport=viewportSnapshot(characterBounds,pet.getContentBounds(),planned.clipped);
   desktopPointer=createDesktopPointer({
-    readCursor:()=>screen.getCursorScreenPoint(),getBounds:()=>pet.getBounds(),
+    readCursor:()=>screen.getCursorScreenPoint(),getBounds:()=>characterBounds??pet.getBounds(),
+    constrainBounds:bounds=>bounds,
     setPosition:(x,y)=>placePet({x,y}),
-    sendPointer:payload=>send('pet:pointer',payload),onDragEnd:saveSettings,
+    sendPointer:payload=>{
+      const bounds=pet.getContentBounds(),localX=payload.x-bounds.x,localY=payload.y-bounds.y;
+      send('pet:pointer',{...payload,localX,localY,width:bounds.width,height:bounds.height,
+        inside:localX>=0&&localY>=0&&localX<bounds.width&&localY<bounds.height});
+    },onDragEnd:saveSettings,
     onDragState:active=>{send('pet:drag-state',active);pollPointer(active);},
   });
   dragLifecycle=createDragLifecycle({window:pet,pointer:desktopPointer,readCursor:()=>screen.getCursorScreenPoint()});
-  pet.webContents.on('did-finish-load',()=>desktopPointer?.reset());
+  pet.webContents.on('did-finish-load',()=>{desktopPointer?.reset();viewportChannel.reset();});
   pet.setMenu(null);
   pet.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   pet.webContents.on('will-navigate', (event, url) => { if (url !== rendererUrl) event.preventDefault(); });
   pet.webContents.on('will-attach-webview', (event) => event.preventDefault());
-  // The renderer owns the character's right-click gesture and sends a single pet:menu IPC.
+  // Settings live exclusively in the native tray menu. Right-button input on
+  // the character belongs to the wheel-resize gesture in the renderer.
   pet.on('move', () => { if(!desktopPointer?.dragging)saveSettings(); });
   pet.on('resize', () => windowShape?.refresh());
   pet.on('closed', () => { dragLifecycle?.dispose();windowShape?.dispose();topmost?.dispose();desktopPointer?.reset();pet = null; if (!quitting) app.quit(); });
@@ -262,10 +299,11 @@ async function createWindow() {
     if (!renderer.state?.settings || renderer.node !== 'undefined' || !webPreferences.sandbox || !webPreferences.contextIsolation || webPreferences.nodeIntegration) {
       throw new Error('Desktop host isolation / preload smoke check failed');
     }
-    if (renderer.rendering?.mode !== 'rigid-layers') {
-      throw new Error('Desktop character layered rendering smoke check failed');
+    if (renderer.rendering?.mode !== 'mesh') {
+      throw new Error('Desktop character mesh rendering smoke check failed');
     }
     const desktopChecks=smokeNativeHotkeys?null:require('./desktop-smoke.cjs').checkDesktopWindow({window:pet,pointer:desktopPointer,topmost,place:placePet,displays:screen.getAllDisplays(),shape:windowShape});
+    if(desktopChecks)desktopChecks.zoom=await require('./zoom-smoke.cjs').checkDesktopZoom({window:pet,getState:state,resize:resizePet,place:placePet,pointer:desktopPointer,shape:windowShape});
     console.log(JSON.stringify({ smoke: 'ok', nativeSpaceChord: smokeNativeHotkeys ? 'passed-on-own-foreground-window' : 'not-requested', renderer, desktopChecks, bounds: pet.getBounds(), security: { sandbox: webPreferences.sandbox, contextIsolation: webPreferences.contextIsolation, nodeIntegration: webPreferences.nodeIntegration } }));
     app.quit();
   }
@@ -285,13 +323,13 @@ else {
     registerIpc();
     tray = new Tray(nativeImage.createFromBuffer(trayPng()));
     tray.setToolTip('爱莉希雅桌宠 · Ctrl+Alt+P 恢复操作');
-    tray.on('click', () => recover());
+    tray.on('click', () => tray.popUpContextMenu(buildMenu()));
     tray.on('right-click', () => tray.popUpContextMenu(buildMenu()));
     hotkeys.recovery = globalShortcut.register('CommandOrControl+Alt+P', () => recover());
     configureAlternateHotkeys();
     configureLegacyHotkeys();
     await createWindow();
-    const constrainToScreen = () => { if (pet && !pet.isDestroyed()) { dragLifecycle?.cancelDrag();placePet(restoreBounds(pet.getBounds(),screen.getAllDisplays()));topmost?.refresh(); } };
+    const constrainToScreen = () => { if (pet && !pet.isDestroyed()) { dragLifecycle?.cancelDrag();placePet(restoreBounds(characterBounds??pet.getBounds(),screen.getAllDisplays(),bounds=>bounds));topmost?.refresh(); } };
     screen.on('display-removed', constrainToScreen);
     screen.on('display-metrics-changed', constrainToScreen);
   }).catch((error) => { console.error(error); app.exit(1); });
@@ -306,7 +344,7 @@ app.on('before-quit', () => {
   clearTimeout(saveTimer);
   if (pet && !pet.isDestroyed()) {
     try {
-      const { x, y } = pet.getBounds();
+      const { x, y } = characterBounds??pet.getBounds();
       fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
       fs.writeFileSync(settingsFile, JSON.stringify({ settings: preferences, position: { x, y } }, null, 2));
     } catch { /* Shutdown must still release input listeners. */ }

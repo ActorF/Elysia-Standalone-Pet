@@ -22,7 +22,7 @@ function command(program, args) {
 }
 
 function desktopProcesses() {
-  const query = "ConvertTo-Json -InputObject @(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and ($_.Name -match 'Elysia|electron' -or ($_.Name -eq 'powershell.exe' -and $_.CommandLine -like '*legacy-hotkeys.ps1 -ParentProcessId*')) } | Select-Object ProcessId,Name) -Depth 3";
+  const query = "ConvertTo-Json -InputObject @(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and ($_.Name -match 'Elysia|爱莉希雅|electron' -or ($_.Name -eq 'powershell.exe' -and $_.CommandLine -like '*legacy-hotkeys.ps1 -ParentProcessId*')) } | Select-Object ProcessId,Name) -Depth 3";
   return JSON.parse(command('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', query]));
 }
 
@@ -93,7 +93,7 @@ function smoke(program, consoleRequired) {
     assetFiles: expected.filter(file => file.startsWith('assets/')),
     licenseFiles: expected.filter(file => ['LICENSE', 'ASSET-NOTICE.md'].includes(file)),
     exactFileList: true, exactSourceBytes: true, fileHashes: hashes,
-    smoke: { directoryExitCode: directory.exitCode, portableExitCode: portable.exitCode, renderer: directory.result.renderer, desktopChecks:directory.result.desktopChecks, security: directory.result.security, portableLogNote: 'The byte-identical directory build supplies detailed layered-renderer/IPC logs; NSIS forwards the portable smoke child exit code.' },
+    smoke: { directoryExitCode: directory.exitCode, portableExitCode: portable.exitCode, renderer: directory.result.renderer, desktopChecks:directory.result.desktopChecks, security: directory.result.security, portableLogNote: 'The byte-identical directory build supplies detailed mesh-renderer/IPC logs; NSIS forwards the portable smoke child exit code.' },
     processes: { previousCount: before.length, previousInstancesPreserved: true, newRemainingProcesses },
     syntheticGlobalInput: false,
   };

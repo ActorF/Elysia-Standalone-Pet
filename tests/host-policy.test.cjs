@@ -6,15 +6,17 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { DEFAULT_SETTINGS, EXPRESSION_KEYS, SKIN_KEYS, POSE_KEYS, sanitizeAppearance, sanitizeSettings, dimensions, freeBounds, fitBounds, restoreBounds, recoverBounds, pointerPayload, actionForKey, isLocalResource } = require('../electron/host-policy.cjs');
 
-test('preferences reject unexpected values and bound zoom to usable sizes', () => {
+test('preferences reject unexpected values and allow one percent through extreme zoom', () => {
   const next = sanitizeSettings({ alwaysOnTop: 'false', clickThrough: true, scale: Infinity, legacyHotkeys: 0, injected: 'ignore' });
   assert.equal(next.alwaysOnTop, true);
   assert.equal(next.clickThrough, true);
   assert.equal(next.scale, 1);
   assert.equal(next.legacyHotkeys, true);
   assert.equal('injected' in next, false);
-  assert.equal(sanitizeSettings({ scale: -30 }).scale, 0.6);
-  assert.equal(sanitizeSettings({ scale: 30 }).scale, 1.6);
+  assert.equal(sanitizeSettings({ scale: -30 }).scale, 0.01);
+  assert.equal(sanitizeSettings({ scale: 30 }).scale, 30);
+  assert.equal(sanitizeSettings({ scale: 1e20 }).scale, 1e20);
+  assert.equal(sanitizeSettings({ scale: 1.012345 }).scale, 1.012345);
   assert.deepEqual(dimensions(1), { width: 420, height: 560 });
   assert.equal(sanitizeSettings({ eyeTracking: false, hairMotion: false }).hairMotion, false);
   assert.equal(DEFAULT_SETTINGS.clickThrough, false);

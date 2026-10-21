@@ -103,4 +103,4 @@ function createWindowShape(window, { screen } = {}) {
     get status(){return {applied:packetKey!==null&&packetKey===appliedPacketKey,rectangles:rectangleCount,nativeUpdates};} };
 }
 
-module.exports = { createWindowShape, MAX_SHAPE_RECTS, MAX_VIEWPORT_SIZE };
+module.exports = { createWindowShape, sanitizePacket, MAX_SHAPE_RECTS, MAX_VIEWPORT_SIZE };

@@ -34,8 +34,16 @@ test('preload keeps event metadata private and removes subscriptions cleanly', (
   assert.equal(listeners.has('pet:pointer'), false);
   bridge.setSettings({ clickThrough: true });
   bridge.setAppearance({ cat: true, pose: 'tea' });
-  bridge.showMenu();
-  assert.deepEqual(invocations, [['pet:set-settings', { clickThrough: true }], ['pet:set-appearance', { cat: true, pose: 'tea' }], ['pet:menu']]);
+  assert.equal(bridge.showMenu, undefined, 'Settings are only available from the tray');
+  assert.deepEqual(invocations, [['pet:set-settings', { clickThrough: true }], ['pet:set-appearance', { cat: true, pose: 'tea' }]]);
+  const zoom={steps:2,anchorX:42,anchorY:80};
+  bridge.zoomBy(zoom);assert.deepEqual(invocations.at(-1),['pet:zoom-by',zoom]);
+  const stopViewport=bridge.onViewport(value=>{received=value;});
+  const viewport={width:1920,height:1080,characterX:-1200,characterY:-800,characterWidth:4200,characterHeight:5600,clipped:true};
+  listeners.get('pet:viewport')({sender:'hidden'},viewport);assert.equal(received,viewport);
+  listeners.get('pet:viewport')({sender:'hidden'},{...viewport,sequence:42});
+  assert.deepEqual(invocations.at(-1),['pet:viewport-received',42]);
+  stopViewport();assert.equal(listeners.has('pet:viewport'),false);
   assert.equal(bridge.dragMove, undefined, 'Drag uses native cursor sampling, not renderer delta queues');
   bridge.dragStart();bridge.dragEnd();
   assert.deepEqual(invocations.slice(-2), [['pet:drag-start'],['pet:drag-end']]);

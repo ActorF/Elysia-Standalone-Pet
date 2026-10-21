@@ -27,7 +27,9 @@ function sanitizeSettings(input = {}, previous = DEFAULT_SETTINGS) {
   for (const key of ['alwaysOnTop', 'clickThrough', 'legacyHotkeys', 'alternateHotkeys', 'eyeTracking', 'hairMotion', 'cat', 'glasses']) {
     if (typeof input[key] === 'boolean') next[key] = input[key];
   }
-  if (Number.isFinite(input.scale)) next.scale = Math.round(Math.min(1.6, Math.max(0.6, input.scale)) * 100) / 100;
+  // Keep sub-percent wheel increments. The only upper boundary is finite
+  // arithmetic for virtual geometry; it is not a user-facing zoom limit.
+  if (Number.isFinite(input.scale)) next.scale = Math.min(Number.MAX_VALUE / 2 ** 20, Math.max(0.01, input.scale));
   return next;
 }
 
@@ -63,8 +65,8 @@ const centerDistance = (a, b) => (a.x + a.width / 2 - b.x - b.width / 2) ** 2
   + (a.y + a.height / 2 - b.y - b.height / 2) ** 2;
 
 /** Bring the pet back to the nearest available work area, even if still partially visible. */
-function recoverBounds(bounds, displays = []) {
-  const desired = freeBounds(bounds);
+function recoverBounds(bounds, displays = [], coordinateBounds = freeBounds) {
+  const desired = coordinateBounds(bounds);
   const available = displays.map(display => ({ display, area: physicalArea(display) })).filter(item => item.area);
   available.sort((a, b) => overlapArea(desired, b.area) - overlapArea(desired, a.area)
     || rectangleDistance(desired, a.area) - rectangleDistance(desired, b.area)
@@ -79,10 +81,10 @@ function recoverBounds(bounds, displays = []) {
  * portion, including taskbar overlap and narrow edge slivers. Only a completely
  * unreachable saved position (for example on a removed monitor) is recovered.
  */
-function restoreBounds(bounds, displays = []) {
-  const desired = freeBounds(bounds);
+function restoreBounds(bounds, displays = [], coordinateBounds = freeBounds) {
+  const desired = coordinateBounds(bounds);
   return displays.some(display => { const area = physicalArea(display); return area && overlapArea(desired, area) > 0; })
-    ? desired : recoverBounds(desired, displays);
+    ? desired : recoverBounds(desired, displays, coordinateBounds);
 }
 
 function pointerPayload(point, bounds) {
