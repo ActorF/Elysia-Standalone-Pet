@@ -2,6 +2,7 @@
 import { EXPRESSIONS, SKINS, POSES, createPetState, applyAction, actionForKey, advance } from './state.mjs';
 import { loadCharacter, drawCharacter, RIG } from './faithful-character.mjs';
 import { createPointerTracking } from './pointer-tracking.mjs';
+import { createCharacterHitRegion,prepareCharacterHitRegions } from './hit-region.mjs';
 
 const desktop = window.elysiaDesktop;
 const state = createPetState();
@@ -14,25 +15,53 @@ let settings = { eyeTracking: true, hairMotion: true, alwaysOnTop: true, clickTh
 let hotkeys = {};
 let toastTimer;
 let dragging = null;
+let characterAtlas=null,dragRenderPaused=false,redrawRequested=true,shapeScheduled=false;
+let toastRegionVisible=false;
 let spaceHeld = false;
 let spaceTarget = null;
 let spaceChordUsed = false;
 let restoringAppearance = Boolean(desktop);
 const pendingActions = [];
 
+function pauseDragRendering(active){dragRenderPaused=Boolean(active);if(!dragRenderPaused)redrawRequested=true;}
+function publishHitRegion(){
+  if(!desktop?.setHitRegion)return Promise.resolve(false);
+  const rects=[],width=innerWidth,height=innerHeight;
+  if(characterAtlas){
+    const shape=createCharacterHitRegion(characterAtlas,state,settings);
+    const scale=Math.min(width/600,height/800),ox=(width-600*scale)/2,oy=(height-800*scale)/2;
+    for(const rect of shape.rects)rects.push({x:ox+rect.x*scale,y:oy+rect.y*scale,width:rect.width*scale,height:rect.height*scale});
+  }
+  for(const node of [panel,document.querySelector('#loading'),toast]){
+    if(node.hidden||(node===toast&&!toastRegionVisible))continue;
+    const box=node.getBoundingClientRect(),pad=node===toast?8:3;
+    if(box.width&&box.height)rects.push({x:box.x-pad,y:box.y-pad,width:box.width+pad*2,height:box.height+pad*2});
+  }
+  return Promise.resolve(desktop.setHitRegion({width,height,rects}));
+}
+function scheduleHitRegion(){
+  if(shapeScheduled||!desktop?.setHitRegion)return;
+  shapeScheduled=true;
+  requestAnimationFrame(()=>{shapeScheduled=false;void publishHitRegion().catch(()=>{});});
+}
+
 function tell(message) {
   toast.textContent = message;
   toast.classList.add('visible');
+  toastRegionVisible=true;
+  scheduleHitRegion();
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.remove('visible'), 1800);
+  toastTimer = setTimeout(() => {toast.classList.remove('visible');toastTimer=setTimeout(()=>{toastRegionVisible=false;scheduleHitRegion();},220);}, 1800);
 }
 
 function showControls(show = panel.hidden) {
   panel.hidden = !show;
   if (show) document.querySelector('#close-controls').focus();
+  scheduleHitRegion();
 }
 
 function syncControls() {
+  redrawRequested=true;scheduleHitRegion();
   for (const button of document.querySelectorAll('[data-expression]')) button.setAttribute('aria-pressed', String(state.expression === button.dataset.expression));
   for (const button of document.querySelectorAll('[data-skin]')) button.setAttribute('aria-checked', String(state[button.dataset.skin]));
   for (const button of document.querySelectorAll('[data-pose]')) button.setAttribute('aria-pressed', String(state.pose === button.dataset.pose));
@@ -120,15 +149,17 @@ canvas.addEventListener('pointerdown', event => {
   // The host samples the latest native cursor while captured. Sending every
   // renderer delta would queue obsolete positions during a busy paint.
   dragging = { pointerId:event.pointerId };
+  pauseDragRendering(true);
   canvas.setPointerCapture(event.pointerId);
   desktop?.dragStart();
 });
 canvas.addEventListener('pointerup', event => {
   if (dragging) desktop?.dragEnd();
   dragging = null;
+  pauseDragRendering(false);
   if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
 });
-canvas.addEventListener('lostpointercapture', () => { dragging = null; desktop?.dragEnd(); });
+canvas.addEventListener('lostpointercapture', () => { dragging = null;pauseDragRendering(false);desktop?.dragEnd(); });
 canvas.addEventListener('contextmenu', event => { event.preventDefault(); desktop ? desktop.showMenu() : showControls(true); });
 canvas.addEventListener('wheel', event => {
   if (!event.ctrlKey) return;
@@ -157,10 +188,11 @@ document.addEventListener('keyup', event => {
   if (spaceHeld && !spaceChordUsed && spaceTarget === document.activeElement) spaceTarget?.click();
   spaceHeld = false; spaceTarget = null;
 });
-window.addEventListener('blur', () => { spaceHeld = false; spaceTarget = null; if (dragging) desktop?.dragEnd(); dragging = null; });
+window.addEventListener('blur', () => { spaceHeld = false; spaceTarget = null; if (dragging) desktop?.dragEnd(); dragging = null;pauseDragRendering(false); });
 
 if (desktop) {
   desktop.onPointer(event => pointerTracking.sample(event));
+  desktop.onDragState?.(active=>pauseDragRendering(active));
   desktop.onAction(act);
   desktop.onSettings(snapshot => { settings = snapshot.settings; hotkeys = snapshot.hotkeys; syncControls(); });
   const snapshot = await desktop.getState();
@@ -173,21 +205,33 @@ syncControls();
 
 try {
   const atlas = await loadCharacter(state);
+  await prepareCharacterHitRegions(atlas,settings);
+  characterAtlas=atlas;
   document.querySelector('#loading').hidden = true;
   // Match canvas backing resolution to the display without changing the rig's logical coordinates.
   const resize = () => {
+    scheduleHitRegion();
     const scale = Math.min(innerWidth / 600, innerHeight / 800) * devicePixelRatio;
-    canvas.width = Math.round(600 * scale); canvas.height = Math.round(800 * scale);
+    const width=Math.round(600*scale),height=Math.round(800*scale);
+    if(canvas.width===width&&canvas.height===height)return;
+    canvas.width=width;canvas.height=height;
     ctx.setTransform(canvas.width / 600, 0, 0, canvas.height / 800, 0, 0);
+    redrawRequested=true;scheduleHitRegion();
   };
   window.addEventListener('resize', resize); resize();
   let previous = performance.now();
   function frame(now) {
-    advance(state, (now - previous) / 1000, settings); previous = now;
-    drawCharacter(ctx, atlas, state, settings);
+    const elapsed=(now-previous)/1000;previous=now;
+    // While held, let Windows move the already-composited bitmap. Repainting
+    // all layers at 160Hz competes with native window movement and causes stalls.
+    if(!dragRenderPaused||redrawRequested){
+      advance(state,dragRenderPaused?0:elapsed,settings);
+      drawCharacter(ctx,atlas,state,settings);redrawRequested=false;
+    }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+  await publishHitRegion();
   // Read-only diagnostics make screenshot tests deterministic without exposing Node or arbitrary IPC.
   window.elysiaPreview = {
     rendering: { mode: atlas.renderer.mode, eyeTracking: atlas.renderer.eyeTrackingAvailable },

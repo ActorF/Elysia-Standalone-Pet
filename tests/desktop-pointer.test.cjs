@@ -1,11 +1,11 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
-const {createDesktopPointer,POINTER_INTERVAL_MS}=require('../electron/desktop-pointer.cjs');
+const {createDesktopPointer,POINTER_INTERVAL_MS,DRAG_INTERVAL_MS}=require('../electron/desktop-pointer.cjs');
 function setup(){
  let cursor={x:100,y:100},bounds={x:30,y:50,width:420,height:560},clock=0,saves=0;
- const events=[],moves=[];
- const pointer=createDesktopPointer({readCursor:()=>cursor,getBounds:()=>({...bounds}),setPosition:(x,y)=>{moves.push([x,y]);bounds={...bounds,x,y};},sendPointer:p=>events.push(p),onDragEnd:()=>saves++,now:()=>clock});
- return {pointer,events,moves,get bounds(){return bounds;},get saves(){return saves;},cursor:p=>{cursor=p;},time:t=>{clock=t;}};
+ const events=[],moves=[],dragStates=[];
+ const pointer=createDesktopPointer({readCursor:()=>cursor,getBounds:()=>({...bounds}),setPosition:(x,y)=>{moves.push([x,y]);bounds={...bounds,x,y};},sendPointer:p=>events.push(p),onDragEnd:()=>saves++,onDragState:active=>dragStates.push(active),now:()=>clock});
+ return {pointer,events,moves,dragStates,get bounds(){return bounds;},get saves(){return saves;},cursor:p=>{cursor=p;},time:t=>{clock=t;}};
 }
 test('rapid native drag uses latest cursor independently of unacknowledged renderer events',()=>{
  const s=setup();s.pointer.startDrag();s.pointer.sample();
@@ -14,7 +14,15 @@ test('rapid native drag uses latest cursor independently of unacknowledged rende
  s.pointer.acknowledge(s.events[0].sequence);s.pointer.sample();
  assert.deepEqual([s.events[1].x,s.events[1].y],[-800,900]);
  assert.equal(s.events[1].localX,70);assert.equal(s.events[1].localY,50);
- assert.equal(POINTER_INTERVAL_MS,8);
+ assert.equal(DRAG_INTERVAL_MS,4);assert.equal(POINTER_INTERVAL_MS,16);
+});
+
+test('drag state changes once per gesture, resumes on cancel/reset, and cannot reset the grab offset twice',()=>{
+ const s=setup();s.pointer.startDrag();s.cursor({x:150,y:140});s.pointer.startDrag();s.pointer.sample();
+ assert.deepEqual([s.bounds.x,s.bounds.y],[80,90]);assert.deepEqual(s.dragStates,[true]);
+ s.pointer.endDrag();s.pointer.endDrag();assert.deepEqual(s.dragStates,[true,false]);
+ s.pointer.startDrag();s.pointer.cancelDrag();s.pointer.cancelDrag();
+ s.pointer.startDrag();s.pointer.reset();assert.deepEqual(s.dragStates,[true,false,true,false,true,false]);
 });
 test('release applies final native position once and stops further movement',()=>{
  const s=setup();s.pointer.startDrag();s.cursor({x:900,y:-700});s.pointer.endDrag();

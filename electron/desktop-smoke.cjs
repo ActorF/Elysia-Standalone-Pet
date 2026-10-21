@@ -2,7 +2,7 @@
 'use strict';
 const assert=require('node:assert/strict');
 const {restoreBounds,recoverBounds}=require('./host-policy.cjs');
-function checkDesktopWindow({window,pointer,topmost,place,displays}){
+function checkDesktopWindow({window,pointer,topmost,place,displays,shape}){
  const original=window.getBounds(),wasTopmost=topmost.enabled,area=displays[0].bounds;
  const center={x:area.x+Math.round(area.width/2),y:area.y+Math.round(area.height/2)};
  const positions={
@@ -14,6 +14,8 @@ function checkDesktopWindow({window,pointer,topmost,place,displays}){
  const actual={};
  try{
   assert.equal(window.isVisible(),false,'Desktop smoke must remain hidden');
+  assert.equal(shape.status.applied,true,'Character silhouette is installed on the native window');
+  assert.ok(shape.status.rectangles>1&&shape.status.rectangles<400,'Hit region follows the character contour');
   topmost.setEnabled(false);assert.equal(window.isAlwaysOnTop(),false);
   topmost.setEnabled(true);assert.equal(window.isAlwaysOnTop(),true);
   topmost.refresh();assert.equal(window.isVisible(),false,'Topmost must not show a hidden window');
@@ -30,6 +32,7 @@ function checkDesktopWindow({window,pointer,topmost,place,displays}){
   // Fractional Windows DPI must never feed rounded native dimensions back into
   // the next move. Exercise real setBounds repeatedly, within one monitor.
   place({x:area.x+150,y:area.y+150});
+  const shapeUpdatesBefore=shape.status.nativeUpdates;
   const sizes=[],start={x:area.x+250,y:area.y+250};
   pointer.startDrag(start);
   for(let i=0;i<120;i++){
@@ -39,6 +42,7 @@ function checkDesktopWindow({window,pointer,topmost,place,displays}){
   pointer.endDrag({x:start.x+119%41,y:start.y+119%37});
   const sizeRange=Object.fromEntries(['width','height'].map(key=>[key,{min:Math.min(...sizes.map(size=>size[key])),max:Math.max(...sizes.map(size=>size[key]))}]));
   for(const key of ['width','height'])assert.ok(sizeRange[key].max-sizeRange[key].min<=2,`${key}: native drag must not accumulate DPI rounding`);
+  assert.equal(shape.status.nativeUpdates,shapeUpdatesBefore,'Ordinary dragging must reuse the installed native shape');
   let mixedDpiSteps=0;
   for(const display of displays.slice(1)){
    if(Math.abs(display.scaleFactor-displays[0].scaleFactor)<.01)continue;
@@ -56,7 +60,7 @@ function checkDesktopWindow({window,pointer,topmost,place,displays}){
   const recovered=recoverBounds(window.getBounds(),displays);place(recovered);
   const bounds=window.getBounds();assert.equal(bounds.x,recovered.x);assert.equal(bounds.y,recovered.y);
   assert.equal(window.isVisible(),false);
-  return {nativeEdgePositions:actual,nativeDragSteps:120,contentSizeRange:sizeRange,mixedDpiSteps,partialRestore:true,recovery:true,topmostToggle:true,hiddenThroughout:true,syntheticGlobalInput:false};
+  return {nativeEdgePositions:actual,nativeDragSteps:120,contentSizeRange:sizeRange,mixedDpiSteps,hitRegion:shape.status,shapeStableDuringDrag:true,partialRestore:true,recovery:true,topmostToggle:true,hiddenThroughout:true,syntheticGlobalInput:false};
  }finally{pointer.reset();place(original);topmost.setEnabled(wasTopmost);}
 }
 module.exports={checkDesktopWindow};

@@ -1,8 +1,8 @@
 // Native cursor sampling keeps dragging independent of rendering and IPC queues.
 'use strict';
 const {freeBounds,pointerPayload}=require('./host-policy.cjs');
-const POINTER_INTERVAL_MS=8;
-function createDesktopPointer({readCursor,getBounds,setPosition,sendPointer,onDragEnd=()=>{},now=Date.now}){
+const POINTER_INTERVAL_MS=16,DRAG_INTERVAL_MS=4;
+function createDesktopPointer({readCursor,getBounds,setPosition,sendPointer,onDragEnd=()=>{},onDragState=()=>{},now=Date.now}){
   let drag=null,sequence=0,pending=null,lastSent=null;
   const valid=point=>point&&Number.isFinite(point.x)&&Number.isFinite(point.y);
   function move(point){
@@ -22,14 +22,15 @@ function createDesktopPointer({readCursor,getBounds,setPosition,sendPointer,onDr
     const id=++sequence;pending={id};lastSent=payload;
     sendPointer({...payload,sequence:id,sampledAt});
   }
+  function cancelDrag(){if(drag){drag=null;onDragState(false);}}
   return {
     sample,
-    startDrag(point=readCursor()){if(valid(point))drag={point:{x:point.x,y:point.y},bounds:getBounds()};},
-    endDrag(point=readCursor()){if(!drag)return;move(point);drag=null;onDragEnd();},
-    cancelDrag(){drag=null;},
+    startDrag(point=readCursor()){if(valid(point)&&!drag){drag={point:{x:point.x,y:point.y},bounds:getBounds()};onDragState(true);}},
+    endDrag(point=readCursor()){if(!drag)return;move(point);drag=null;onDragState(false);onDragEnd();},
+    cancelDrag,
     acknowledge(id){if(pending?.id===id)pending=null;},
-    reset(){drag=null;pending=null;lastSent=null;},
+    reset(){cancelDrag();pending=null;lastSent=null;},
     get dragging(){return drag!==null;},
   };
 }
-module.exports={createDesktopPointer,POINTER_INTERVAL_MS};
+module.exports={createDesktopPointer,POINTER_INTERVAL_MS,DRAG_INTERVAL_MS};

@@ -8,7 +8,14 @@
 
 [观看 8 秒待机动画](docs/media/idle.webm) · [猫猫模式分层摆动](docs/media/cat-motion.webm)
 
-## 0.8.1 更新
+## 0.8.2 更新
+
+- 点击区域沿人物轮廓收紧，透明边缘及人物间隙可直接点击后方程序；无需开启整个人物的鼠标穿透。
+- 拖动时保留当前人物画面，优先移动窗口；松开后立即恢复头发、衣摆和眼神动画。
+- 拖动位置每 4 ms 采样，适配本机 160 Hz / 144 Hz 显示器；待机恢复较低采样频率。
+- 保留右键菜单、设置面板、道具、猫尾和四边出屏。轮廓包含完整摆动范围，避免裁掉人物。
+
+## 0.8.1 窗口与鼠标修复
 
 - 拖动直接采样系统鼠标位置；眼神采用最新坐标，移除快速移动时的缓动拖尾。
 - 身体分层按动作复用，开闭眼提前准备，减少眨眼和切换装扮时的卡顿。
@@ -28,6 +35,7 @@
 从 [GitHub Releases](https://github.com/ActorF/Elysia-Standalone-Pet/releases) 下载 Windows 便携版 `.exe`，双击运行，无需安装 Node.js。更新前请先从旧版右键菜单退出。
 
 - 拖动人物移动位置，允许部分人物超出屏幕四边。
+- 人物外的透明空白区域自动穿透；点击人物本身仍可拖动、右键操作。
 - 右键人物或系统托盘图标，打开“表情说明与设置”。
 - **Ctrl + 滚轮**调整大小；位置、大小和设置自动保存。
 - 眼神跟随屏幕上的鼠标，角色会自动眨眼，头发、刘海、衣摆与腿部轻摆。
@@ -80,6 +88,8 @@ npm run test:visual
 npm run test:faces
 node scripts/outfit-integrity-check.cjs
 node scripts/motion-integrity-check.cjs
+node scripts/hit-region-check.cjs
+node scripts/drag-interaction-check.cjs
 
 npm run package
 npm run make:portable

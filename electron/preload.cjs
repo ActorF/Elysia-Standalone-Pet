@@ -13,10 +13,12 @@ const subscribe = (channel, callback) => {
 contextBridge.exposeInMainWorld('elysiaDesktop', Object.freeze({
   getState: () => ipcRenderer.invoke('pet:get-state'),
   onPointer: (callback) => subscribe('pet:pointer', callback),
+  onDragState: (callback) => subscribe('pet:drag-state', callback),
   onAction: (callback) => subscribe('pet:action', callback),
   onSettings: (callback) => subscribe('pet:settings', callback),
   setSettings: (patch) => ipcRenderer.invoke('pet:set-settings', patch),
   setAppearance: (appearance) => ipcRenderer.send('pet:set-appearance', appearance),
+  setHitRegion: (region) => ipcRenderer.invoke('pet:set-hit-region', region),
   dragStart: () => ipcRenderer.send('pet:drag-start'),
   dragEnd: () => ipcRenderer.send('pet:drag-end'),
   showMenu: () => ipcRenderer.send('pet:menu'),

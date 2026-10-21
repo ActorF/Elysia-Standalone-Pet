@@ -42,4 +42,9 @@ test('preload keeps event metadata private and removes subscriptions cleanly', (
   bridge.onPointer(() => { throw Error('callback failed'); });
   assert.throws(() => listeners.get('pet:pointer')({}, {sequence:7,sampledAt:100}), /callback failed/);
   assert.deepEqual(invocations.at(-1), ['pet:pointer-received',7], 'ACK is sent even if a subscriber fails');
+  const stopDrag=bridge.onDragState(active=>{received=active;});
+  listeners.get('pet:drag-state')({sender:'hidden'},true);assert.equal(received,true);
+  stopDrag();assert.equal(listeners.has('pet:drag-state'),false);
+  const region={width:420,height:560,rects:[{x:20,y:30,width:40,height:50}]};
+  bridge.setHitRegion(region);assert.deepEqual(invocations.at(-1),['pet:set-hit-region',region]);
 });

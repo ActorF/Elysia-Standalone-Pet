@@ -8,6 +8,7 @@ const W=1090,H=1443;
 const make=()=>{const c=document.createElement('canvas');c.width=W;c.height=H;return c;};
 export function createLayeredRig(images){
  const canvas=make(),ctx=canvas.getContext('2d'),eyeTracking=createEyeTracking(),cache=new Map(),poses=new Map();
+ let hitHead=null;
  const tail=make();
  // The complete outlined root extends underneath the opaque right cloak.
  tail.getContext('2d').drawImage(images.tail,74,93,1415,827,720,990,368,220);
@@ -32,10 +33,27 @@ export function createLayeredRig(images){
   if(cache.size>4)cache.delete(cache.keys().next().value);return layers;
  }
  const drawLayer=(layer,id,time,enabled)=>{ctx.save();const {a,b,c,d,e,f}=layerTransform(id,time,enabled);ctx.transform(a,b,c,d,e,f);ctx.drawImage(layer,0,0);ctx.restore();};
+ function hitLayers(state={}){
+  const pose=state.pose??'idle',shared=preparePose(pose);
+  // A separate canonical head avoids changing the live expression/blink LRU.
+  // Only the outer alpha matters; the expression features stay inside it.
+  // Keep only one temporary pose: finished hit regions retain compact masks,
+  // not another set of full-resolution canvases for every possible action.
+  if(hitHead?.pose!==pose)hitHead={pose,layers:splitHeadLayers(images[pose==='idle'?'neutral':pose],images,{pose,cat:true},shared.head)};
+  const head=hitHead.layers;
+  return [
+   {image:shared.backHair,id:'backHair'},
+   ...(state.cat?[{image:tail,id:'tail'}]:[]),
+   {image:shared.underlay},{image:shared.legs,id:'legs'},
+   {image:shared.skirt,id:'skirt'},{image:shared.body},{image:head.face},
+   {image:images.glassesFrame},{image:head.frontHair,id:'frontHair'},
+   {image:head.ears},...(state.cat?[{image:head.catEars}]:[]),{image:head.foreground},
+  ];
+ }
  return {
   mode:'rigid-layers',get eyeTrackingAvailable(){return eyeTracking.available;},
   // Exposed for deterministic layer/geometry audits; runtime uses the same preparation.
-  layers:prepare,preparePose,
+  layers:prepare,preparePose,hitLayers,
   draw(source,key,state,settings={},allowGaze=true){
    const layers=prepare(source,key,state),time=state.time??0,enabled=settings.hairMotion!==false;
    ctx.clearRect(0,0,W,H);

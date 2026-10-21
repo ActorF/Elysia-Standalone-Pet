@@ -7,16 +7,17 @@ const { pathToFileURL } = require('node:url');
 const { spawn } = require('node:child_process');
 const { DEFAULT_SETTINGS, EXPRESSION_KEYS, SKIN_KEYS, POSE_KEYS, sanitizeAppearance, sanitizeSettings, dimensions, freeBounds, restoreBounds, recoverBounds, actionForKey, isLocalResource } = require('./host-policy.cjs');
 const { trayPng } = require('./tray-icon.cjs');
-const {createDesktopPointer,POINTER_INTERVAL_MS}=require('./desktop-pointer.cjs');
+const {createDesktopPointer,POINTER_INTERVAL_MS,DRAG_INTERVAL_MS}=require('./desktop-pointer.cjs');
 const {createDragLifecycle}=require('./drag-lifecycle.cjs');
 const {createTopmostController}=require('./window-layer.cjs');
+const {createWindowShape}=require('./window-shape.cjs');
 
 const root = path.resolve(__dirname, '..');
 const rendererUrl = pathToFileURL(path.join(root, 'renderer', 'index.html')).href;
 const smokeNativeHotkeys = process.argv.includes('--smoke-native-hotkeys');
 const isSmokeTest = process.argv.includes('--smoke-test') || smokeNativeHotkeys;
 if (isSmokeTest) app.setPath('userData', path.join(app.getPath('temp'), 'elysia-pet-host-smoke'));
-let pet, tray, settingsFile, pointerTimer, saveTimer, desktopPointer, dragLifecycle, topmost, legacyProcess;
+let pet, tray, settingsFile, pointerTimer, saveTimer, desktopPointer, dragLifecycle, topmost, windowShape, legacyProcess;
 let preferences = { ...DEFAULT_SETTINGS };
 let appearance = sanitizeAppearance();
 let savedPosition = null;
@@ -29,6 +30,11 @@ function send(channel, data) {
 }
 function publishSettings() { send('pet:settings', state()); }
 function action(typeOrAction) { send('pet:action', typeof typeOrAction === 'string' ? { type: typeOrAction } : typeOrAction); }
+function pollPointer(dragging=false) {
+  clearInterval(pointerTimer);
+  if(quitting||!pet||pet.isDestroyed())return;
+  pointerTimer=setInterval(()=>{if(pet&&!pet.isDestroyed())desktopPointer.sample();},dragging?DRAG_INTERVAL_MS:POINTER_INTERVAL_MS);
+}
 function placePet(position) {
   // Keep the configured DIP size. Recycling getBounds() through setPosition()
   // can progressively enlarge a frameless window at fractional Windows DPI.
@@ -42,6 +48,7 @@ function placePet(position) {
     pet.setBounds(freeBounds({...target,x:target.x+2*(target.x-actual.x),y:target.y+2*(target.y-actual.y)}),false);
     pet.setBounds(target,false);
   }
+  windowShape?.refresh();
 }
 function saveSettings() {
   clearTimeout(saveTimer);
@@ -187,9 +194,10 @@ function registerIpc() {
   const trusted = (event) => pet && !pet.isDestroyed() && event.sender === pet.webContents && event.senderFrame === pet.webContents.mainFrame;
   ipcMain.handle('pet:get-state', (event) => trusted(event) ? state() : null);
   ipcMain.handle('pet:set-settings', (event, patch) => trusted(event) ? updateSettings(patch) : null);
+  ipcMain.handle('pet:set-hit-region', (event, region) => trusted(event) ? windowShape?.update(region)??false : false);
   ipcMain.on('pet:set-appearance', (event, value) => { if (trusted(event)) appearance = sanitizeAppearance(value); });
   ipcMain.on('pet:pointer-received', (event, sequence) => { if (trusted(event) && Number.isSafeInteger(sequence)) desktopPointer?.acknowledge(sequence); });
-  ipcMain.on('pet:drag-start', (event) => { if (trusted(event) && !preferences.clickThrough) dragLifecycle?.startDrag(); });
+  ipcMain.on('pet:drag-start', (event) => { if (trusted(event) && (preferences.clickThrough||!dragLifecycle?.startDrag())) send('pet:drag-state',false); });
   ipcMain.on('pet:drag-end', (event) => { if (trusted(event)) dragLifecycle?.endDrag(); });
   ipcMain.on('pet:menu', (event) => { if (trusted(event)) showMenu(); });
   ipcMain.on('pet:quit', (event) => { if (trusted(event)) app.quit(); });
@@ -208,10 +216,12 @@ async function createWindow() {
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, backgroundThrottling: false, devTools: !app.isPackaged },
   });
   topmost=createTopmostController(pet,{enabled:preferences.alwaysOnTop});
+  windowShape=createWindowShape(pet,{screen});
   desktopPointer=createDesktopPointer({
     readCursor:()=>screen.getCursorScreenPoint(),getBounds:()=>pet.getBounds(),
     setPosition:(x,y)=>placePet({x,y}),
     sendPointer:payload=>send('pet:pointer',payload),onDragEnd:saveSettings,
+    onDragState:active=>{send('pet:drag-state',active);pollPointer(active);},
   });
   dragLifecycle=createDragLifecycle({window:pet,pointer:desktopPointer,readCursor:()=>screen.getCursorScreenPoint()});
   pet.webContents.on('did-finish-load',()=>desktopPointer?.reset());
@@ -220,13 +230,12 @@ async function createWindow() {
   pet.webContents.on('will-navigate', (event, url) => { if (url !== rendererUrl) event.preventDefault(); });
   pet.webContents.on('will-attach-webview', (event) => event.preventDefault());
   // The renderer owns the character's right-click gesture and sends a single pet:menu IPC.
-  pet.on('move', saveSettings);
-  pet.on('closed', () => { dragLifecycle?.dispose();topmost?.dispose();desktopPointer?.reset();pet = null; if (!quitting) app.quit(); });
+  pet.on('move', () => { if(!desktopPointer?.dragging)saveSettings(); });
+  pet.on('resize', () => windowShape?.refresh());
+  pet.on('closed', () => { dragLifecycle?.dispose();windowShape?.dispose();topmost?.dispose();desktopPointer?.reset();pet = null; if (!quitting) app.quit(); });
   pet.once('ready-to-show', () => { if (!isSmokeTest) pet.showInactive(); });
   await pet.loadURL(rendererUrl);
-  pointerTimer = setInterval(() => {
-    if (pet && !pet.isDestroyed()) desktopPointer.sample();
-  }, POINTER_INTERVAL_MS);
+  pollPointer();
   if (isSmokeTest) {
     await pet.webContents.executeJavaScript(`new Promise((resolve,reject)=>{const deadline=Date.now()+15000;const timer=setInterval(()=>{if(document.documentElement.dataset.ready==='true'){clearInterval(timer);resolve(true)}else if(Date.now()>deadline){clearInterval(timer);reject(new Error('Renderer did not become ready'))}},50)})`);
     if (smokeNativeHotkeys) {
@@ -256,7 +265,7 @@ async function createWindow() {
     if (renderer.rendering?.mode !== 'rigid-layers') {
       throw new Error('Desktop character layered rendering smoke check failed');
     }
-    const desktopChecks=smokeNativeHotkeys?null:require('./desktop-smoke.cjs').checkDesktopWindow({window:pet,pointer:desktopPointer,topmost,place:placePet,displays:screen.getAllDisplays()});
+    const desktopChecks=smokeNativeHotkeys?null:require('./desktop-smoke.cjs').checkDesktopWindow({window:pet,pointer:desktopPointer,topmost,place:placePet,displays:screen.getAllDisplays(),shape:windowShape});
     console.log(JSON.stringify({ smoke: 'ok', nativeSpaceChord: smokeNativeHotkeys ? 'passed-on-own-foreground-window' : 'not-requested', renderer, desktopChecks, bounds: pet.getBounds(), security: { sandbox: webPreferences.sandbox, contextIsolation: webPreferences.contextIsolation, nodeIntegration: webPreferences.nodeIntegration } }));
     app.quit();
   }
@@ -291,6 +300,7 @@ app.on('before-quit', () => {
   quitting = true;
   clearInterval(pointerTimer);
   dragLifecycle?.dispose();
+  windowShape?.dispose();
   topmost?.dispose();
   desktopPointer?.reset();
   clearTimeout(saveTimer);
