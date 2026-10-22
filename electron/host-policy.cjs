@@ -5,7 +5,7 @@ const path = require('node:path');
 const { fileURLToPath } = require('node:url');
 const DEFAULT_SETTINGS = Object.freeze({
   alwaysOnTop: true, clickThrough: false, scale: 1, legacyHotkeys: true, alternateHotkeys: false,
-  eyeTracking: true, hairMotion: true, cat: false, glasses: false,
+  eyeTracking: true, hairMotion: true, keyDisplay: true, cat: false, glasses: false,
 });
 const EXPRESSION_KEYS = Object.freeze({
   '1': 'blush', '2': 'angry', '3': 'sleep', '4': 'surprise', '5': 'dizzy',
@@ -24,7 +24,7 @@ function sanitizeAppearance(input = {}) {
 
 function sanitizeSettings(input = {}, previous = DEFAULT_SETTINGS) {
   const next = { ...previous };
-  for (const key of ['alwaysOnTop', 'clickThrough', 'legacyHotkeys', 'alternateHotkeys', 'eyeTracking', 'hairMotion', 'cat', 'glasses']) {
+  for (const key of ['alwaysOnTop', 'clickThrough', 'legacyHotkeys', 'alternateHotkeys', 'eyeTracking', 'hairMotion', 'keyDisplay', 'cat', 'glasses']) {
     if (typeof input[key] === 'boolean') next[key] = input[key];
   }
   // Keep sub-percent wheel increments. The only upper boundary is finite

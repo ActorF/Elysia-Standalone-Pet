@@ -97,12 +97,13 @@ test('high-frequency cursor bursts retain only their last point and ignore stale
 test('cursor mapping keeps its original canvas anchor at every aspect ratio and rejects invalid geometry',()=>{
   for(const [width,height]of [[420,560],[600,800],[900,800],[600,1000]]){
     const state=createPetState(),anchor={gazeX:292,gazeY:326};
-    const tracking=createPointerTracking(state,anchor),scale=Math.min(width/600,height/800);
-    assert.equal(tracking.sample({localX:(width-600*scale)/2+292*scale,localY:(height-800*scale)/2+326*scale,width,height,sampledAt:1}),true);
-    advance(state,1/60);assert.deepEqual(state.gaze,{x:0,y:0});
+    const tracking=createPointerTracking(state,anchor),scale=Math.min(width/740,height/800);
+    assert.equal(tracking.sample({localX:(width-740*scale)/2+(140+292)*scale,localY:(height-800*scale)/2+326*scale,width,height,sampledAt:1}),true);
+    advance(state,1/60);assert.ok(Math.abs(state.gaze.x)<1e-12&&Math.abs(state.gaze.y)<1e-12);
+    const centered={...state.gaze};
     for(const malformed of [{width:0},{height:-1},{localX:NaN},{localY:Infinity}]){
       assert.equal(tracking.sample({localX:0,localY:0,width,height,sampledAt:2,...malformed}),false);
-      advance(state,1/60);assert.deepEqual(state.gaze,{x:0,y:0});
+      advance(state,1/60);assert.deepEqual(state.gaze,centered);
     }
   }
 });

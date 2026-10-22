@@ -2,8 +2,13 @@
 'use strict';
 const assert=require('node:assert/strict');
 const {restoreBounds,recoverBounds}=require('./host-policy.cjs');
-function checkDesktopWindow({window,pointer,topmost,place,displays,shape}){
- const original=window.getBounds(),wasTopmost=topmost.enabled,area=displays[0].bounds;
+const {planViewport}=require('./pet-viewport.cjs');
+function checkDesktopWindow({window,pointer,topmost,place,displays,shape,getState}){
+ const characterBounds=()=>{
+  const view=getState().viewport;
+  return {x:view.x+view.characterX,y:view.y+view.characterY,width:view.characterWidth,height:view.characterHeight};
+ };
+ const original=characterBounds(),wasTopmost=topmost.enabled,area=displays[0].bounds;
  const center={x:area.x+Math.round(area.width/2),y:area.y+Math.round(area.height/2)};
  const positions={
   top:{x:center.x,y:area.y-original.height+55},
@@ -11,7 +16,7 @@ function checkDesktopWindow({window,pointer,topmost,place,displays,shape}){
   left:{x:area.x-original.width+55,y:center.y},
   right:{x:area.x+area.width-55,y:center.y},
  };
- const actual={};
+ const actual={},nativePositions={};
  try{
   assert.equal(window.isVisible(),false,'Desktop smoke must remain hidden');
   assert.equal(shape.status.applied,true,'Character silhouette is installed on the native window');
@@ -24,9 +29,11 @@ function checkDesktopWindow({window,pointer,topmost,place,displays,shape}){
    const start={x:original.x+100,y:original.y+100};
    const end={x:start.x+position.x-original.x,y:start.y+position.y-original.y};
    pointer.startDrag(start);pointer.sample(end);pointer.endDrag(end);
-   const bounds=window.getBounds();actual[id]=bounds;
-   assert.equal(bounds.x,position.x,`${id}: native drag x is not clamped`);
-   assert.equal(bounds.y,position.y,`${id}: native drag y is not clamped`);
+   const bounds=characterBounds();actual[id]=bounds;nativePositions[id]=window.getBounds();
+   assert.equal(bounds.x,position.x,`${id}: character drag x is not clamped`);
+   assert.equal(bounds.y,position.y,`${id}: character drag y is not clamped`);
+   const expected=planViewport(bounds,displays).native;
+   assert.ok(Math.abs(nativePositions[id].x-expected.x)<=2&&Math.abs(nativePositions[id].y-expected.y)<=2,`${id}: native drawing bounds include the fixed effects margin`);
    assert.deepEqual(restoreBounds(bounds,displays),bounds,`${id}: restart preserves edge placement`);
   }
   // Fractional Windows DPI must never feed rounded native dimensions back into
@@ -52,15 +59,16 @@ function checkDesktopWindow({window,pointer,topmost,place,displays,shape}){
    for(let step=0;step<=100;step++){
     const fraction=step<=50?step/50:(100-step)/50;
     const target={x:Math.round(a.x+(b.x-a.x)*fraction),y:Math.round(a.y+(b.y-a.y)*fraction)};
-    place(target);const actual=window.getBounds();mixedDpiSteps++;
-    assert.ok(Math.abs(actual.x-target.x)<=2&&Math.abs(actual.y-target.y)<=2,'Mixed-DPI crossing retains intended position');
+    place(target);const actual=characterBounds(),native=window.getBounds(),expected=planViewport(actual,displays).native;mixedDpiSteps++;
+    assert.ok(Math.abs(actual.x-target.x)<=2&&Math.abs(actual.y-target.y)<=2,'Mixed-DPI crossing retains the intended character position');
+    assert.ok(Math.abs(native.x-expected.x)<=2&&Math.abs(native.y-expected.y)<=2,'Mixed-DPI native drawing bounds retain the effects margin');
    }
   }
   place(actual.right);
-  const recovered=recoverBounds(window.getBounds(),displays);place(recovered);
-  const bounds=window.getBounds();assert.equal(bounds.x,recovered.x);assert.equal(bounds.y,recovered.y);
+  const recovered=recoverBounds(characterBounds(),displays);place(recovered);
+  const bounds=characterBounds();assert.equal(bounds.x,recovered.x);assert.equal(bounds.y,recovered.y);
   assert.equal(window.isVisible(),false);
-  return {nativeEdgePositions:actual,nativeDragSteps:120,contentSizeRange:sizeRange,mixedDpiSteps,hitRegion:shape.status,shapeStableDuringDrag:true,partialRestore:true,recovery:true,topmostToggle:true,hiddenThroughout:true,syntheticGlobalInput:false};
+  return {nativeEdgePositions:nativePositions,characterEdgePositions:actual,nativeDragSteps:120,contentSizeRange:sizeRange,mixedDpiSteps,hitRegion:shape.status,shapeStableDuringDrag:true,partialRestore:true,recovery:true,topmostToggle:true,hiddenThroughout:true,syntheticGlobalInput:false};
  }finally{pointer.reset();place(original);topmost.setEnabled(wasTopmost);}
 }
 module.exports={checkDesktopWindow};

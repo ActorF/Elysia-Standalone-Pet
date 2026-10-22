@@ -2,15 +2,16 @@
 import { EXPRESSIONS, POSES, createPetState, applyAction, actionForKey, advance } from './state.mjs';
 import { loadCharacter, drawCharacter, RIG } from './faithful-character.mjs';
 import { createPointerTracking } from './pointer-tracking.mjs';
-import { createCharacterHitRegion, prepareCharacterHitRegions } from './hit-region.mjs';
+import { createCharacterHitRegion, prepareCharacterHitRegions, withKeyCloudRegion } from './hit-region.mjs';
 import { characterView, canvasBacking } from './viewport.mjs';
+import { createKeyDisplay, drawKeyCloud, KEY_EFFECT_BOUNDS } from './key-cloud.mjs';
 
 const desktop = window.elysiaDesktop;
 const state = createPetState();
 const pointerTracking = createPointerTracking(state, RIG);
 const canvas = document.querySelector('#pet');
 const ctx = canvas.getContext('2d');
-let settings = { eyeTracking:true, hairMotion:true, alwaysOnTop:true, clickThrough:false, legacyHotkeys:true, scale:1, cat:false, glasses:false };
+let settings = { eyeTracking:true, hairMotion:true, alwaysOnTop:true, clickThrough:false, legacyHotkeys:true, keyDisplay:true, scale:1, cat:false, glasses:false };
 let hotkeys = {}, viewport = null;
 let dragging = null, rightPointer = null;
 let characterAtlas = null, dragRenderPaused = false, redrawRequested = true, shapeScheduled = false;
@@ -19,13 +20,22 @@ let settingsEpoch = 0, viewportEpoch = 0, settingsWrite = 0;
 let zoomSteps = 0, zoomAnchor = null, zoomScheduled = false, zoomBusy = false;
 let updateCanvas = () => {};
 const pendingActions = [];
+const keyDisplay=createKeyDisplay();
+let keyCloudVisible=false;
+
+function receiveTypedKey(character){
+  if(settings.keyDisplay===false||!keyDisplay.receive(character,performance.now()))return;
+  redrawRequested=true;
+  if(!keyCloudVisible){keyCloudVisible=true;scheduleHitRegion();}
+}
 
 function pauseDragRendering(active) { dragRenderPaused = Boolean(active); if (!dragRenderPaused) redrawRequested = true; }
 function publishHitRegion() {
   if (!desktop?.setHitRegion || !characterAtlas) return Promise.resolve(false);
-  const shape = createCharacterHitRegion(characterAtlas, state, settings);
+  const shape = withKeyCloudRegion(createCharacterHitRegion(characterAtlas, state, settings),keyCloudVisible,state.pose);
   // The host projects these cached logical rectangles into the visible window.
-  return Promise.resolve(desktop.setHitRegion({width:600, height:800, rects:shape.rects, space:'character'}));
+  return Promise.resolve(desktop.setHitRegion({width:shape.width, height:shape.height,
+    originX:shape.originX, referenceWidth:shape.referenceWidth, rects:shape.rects, space:'character'}));
 }
 function scheduleHitRegion() {
   if (shapeScheduled || !desktop?.setHitRegion) return;
@@ -48,6 +58,7 @@ function receiveViewport(next) {
 }
 function receiveSettings(snapshot, includeViewport = true) {
   if (snapshot?.settings) { settings = {...snapshot.settings}; settingsEpoch++; }
+  if(settings.keyDisplay===false){keyDisplay.clear();keyCloudVisible=false;}
   hotkeys = snapshot?.hotkeys ?? hotkeys;
   if (includeViewport && snapshot?.viewport) receiveViewport(snapshot.viewport);
   redrawRequested = true; scheduleHitRegion();
@@ -127,6 +138,8 @@ canvas.addEventListener('wheel', event => {
   zoomAnchor = {x:event.clientX,y:event.clientY}; queueZoom();
 }, {passive:false});
 document.addEventListener('keydown', event => {
+  // The native listener owns desktop input. Browsers/non-Windows retain a local preview fallback.
+  if(!hotkeys.typing?.active&&!event.ctrlKey&&!event.altKey&&!event.metaKey)receiveTypedKey(event.key);
   if (event.code === 'Space') { event.preventDefault(); spaceHeld = true; return; }
   const chord = spaceHeld ? actionForKey(event.code) : null;
   if (chord) event.preventDefault();
@@ -142,6 +155,7 @@ if (desktop) {
   desktop.onAction(act);
   desktop.onViewport?.(receiveViewport);
   desktop.onSettings(receiveSettings);
+  desktop.onTypedKey?.(receiveTypedKey);
   const epoch = settingsEpoch, viewEpoch = viewportEpoch;
   const snapshot = await desktop.getState();
   if (epoch === settingsEpoch) receiveSettings(snapshot, viewEpoch === viewportEpoch);
@@ -175,42 +189,48 @@ try {
   };
   window.addEventListener('resize', () => { updateCanvas(); scheduleHitRegion(); }); updateCanvas();
   let clippedSource = null;
-  function paintCharacter() {
+  function paintCharacter(display) {
     const view = characterView(innerWidth, innerHeight, viewport);
     const rx = canvas.width / innerWidth, ry = canvas.height / innerHeight;
     if (!viewport?.clipped) {
       if(clearCanvasBeforePaint){ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);}
       clearCanvasBeforePaint=false;
       ctx.setTransform(rx*view.scale,0,0,ry*view.scale,rx*view.x,ry*view.y);
-      drawCharacter(ctx,atlas,state,settings); return;
+      ctx.clearRect(-KEY_EFFECT_BOUNDS.left,0,KEY_EFFECT_BOUNDS.left,800);
+      drawCharacter(ctx,atlas,state,settings);drawKeyCloud(ctx,display,{pose:state.pose});return;
     }
     // Keep all drawing coordinates small even at extreme zoom. Rasterize the
     // existing rig at a fixed resolution, then sample only its visible portion.
     // Huge Canvas transforms lose precision and can silently produce no pixels.
     if (!clippedSource) {
       clippedSource = document.createElement('canvas');
-      clippedSource.width = 1200; clippedSource.height = 1600;
+      clippedSource.width = KEY_EFFECT_BOUNDS.width*2; clippedSource.height = 1600;
       clippedSource.getContext('2d').scale(2,2);
+      clippedSource.getContext('2d').translate(KEY_EFFECT_BOUNDS.left,0);
     }
+    clippedSource.getContext('2d').clearRect(-KEY_EFFECT_BOUNDS.left,0,KEY_EFFECT_BOUNDS.left,800);
     drawCharacter(clippedSource.getContext('2d'),atlas,state,settings);
+    drawKeyCloud(clippedSource.getContext('2d'),display,{pose:state.pose});
     ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);
     clearCanvasBeforePaint=false;
-    const x=Math.max(0,view.x),y=Math.max(0,view.y);
+    const x=Math.max(0,view.x-KEY_EFFECT_BOUNDS.left*view.scale),y=Math.max(0,view.y);
     const width=Math.min(innerWidth,view.x+600*view.scale)-x,height=Math.min(innerHeight,view.y+800*view.scale)-y;
     if (width<=0 || height<=0) return;
-    const sx=(x-view.x)/view.scale*2,sy=(y-view.y)/view.scale*2;
+    const sx=((x-view.x)/view.scale+KEY_EFFECT_BOUNDS.left)*2,sy=(y-view.y)/view.scale*2;
     // Below a subpixel footprint the whole visible image is effectively one
     // sample. A small positive footprint avoids GPU float rounding to zero.
-    const sw=Math.min(1200-sx,Math.max(1/64,width/view.scale*2));
+    const sw=Math.min(clippedSource.width-sx,Math.max(1/64,width/view.scale*2));
     const sh=Math.min(1600-sy,Math.max(1/64,height/view.scale*2));
     if(sw>0&&sh>0)ctx.drawImage(clippedSource,sx,sy,sw,sh,x*rx,y*ry,width*rx,height*ry);
   }
   let previous = performance.now();
   function frame(now) {
     const elapsed = (now-previous)/1000; previous = now;
+    const display=settings.keyDisplay===false?null:keyDisplay.snapshot(now);
+    if(keyCloudVisible!==Boolean(display)){keyCloudVisible=Boolean(display);redrawRequested=true;scheduleHitRegion();}
     if (!dragRenderPaused || redrawRequested) {
       advance(state,dragRenderPaused?0:elapsed,settings);
-      paintCharacter(); redrawRequested = false;
+      paintCharacter(display); redrawRequested = false;
     }
     requestAnimationFrame(frame);
   }
@@ -221,6 +241,7 @@ try {
     snapshot:() => JSON.parse(JSON.stringify(state)),
     settings:() => ({...settings}),
     viewport:() => viewport ? {...viewport} : null,
+    keyDisplay:()=>keyDisplay.snapshot(performance.now()),
     render:(expressionOrOptions,megaphone=false,time=0,resolutionScale=1) => {
       const options = expressionOrOptions && typeof expressionOrOptions==='object' ? expressionOrOptions : {expression:expressionOrOptions,pose:megaphone?'megaphone':'idle',time};
       const preview = createPetState();
@@ -230,9 +251,13 @@ try {
       preview.blink=Number.isFinite(options.blink)?Math.min(1,Math.max(0,options.blink)):0;
       preview.time=Number.isFinite(options.time)?options.time:0;
       const factor=Math.min(3,Math.max(1,Number(options.resolutionScale??resolutionScale)||1));
-      const target=document.createElement('canvas');target.width=600*factor;target.height=800*factor;
+      const effectLeft=typeof options.key==='string'&&preview.pose==='megaphone'?KEY_EFFECT_BOUNDS.left:0;
+      const target=document.createElement('canvas');target.width=(600+effectLeft)*factor;target.height=800*factor;
       const previewContext=target.getContext('2d');previewContext.scale(factor,factor);
-      drawCharacter(previewContext,atlas,preview,settings);return target.toDataURL();
+      previewContext.translate(effectLeft,0);
+      drawCharacter(previewContext,atlas,preview,settings);
+      if(typeof options.key==='string')drawKeyCloud(previewContext,{character:options.key,age:options.keyAge??0},{pose:preview.pose});
+      return target.toDataURL();
     },
   };
   document.documentElement.dataset.ready='true';

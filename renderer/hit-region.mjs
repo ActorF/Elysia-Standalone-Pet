@@ -2,9 +2,36 @@
 import {RIG,composeCharacterFrame} from './faithful-character.mjs';
 import {EXPRESSIONS} from './state.mjs';
 import {meshAlphaToOccupancy} from './mesh-envelope.mjs';
+import {drawKeyCloud,KEY_EFFECT_BOUNDS} from './key-cloud.mjs';
 
 const WIDTH=600,HEIGHT=800,CELL_SIZE=4;
 const regions=new WeakMap();
+const cloudRegions=new Map();
+const effectBaseRegions=new WeakMap();
+
+/** Cache the curved cloud and sound-wave envelope; animation never rebuilds the native window. */
+export function withKeyCloudRegion(region,visible,pose='idle'){
+ let base=effectBaseRegions.get(region);
+ if(!base){
+  base={...region,width:KEY_EFFECT_BOUNDS.width,originX:-KEY_EFFECT_BOUNDS.left,referenceWidth:WIDTH,
+    rects:region.rects.map(rect=>({...rect,x:rect.x+KEY_EFFECT_BOUNDS.left}))};
+  effectBaseRegions.set(region,base);
+ }
+ if(!visible)return base;
+ const mode=pose==='megaphone'?'megaphone':'idle';
+ let cloudRectangles=cloudRegions.get(mode);
+ if(!cloudRectangles){
+  const canvas=document.createElement('canvas');canvas.width=KEY_EFFECT_BOUNDS.width;canvas.height=HEIGHT;
+  const ctx=canvas.getContext('2d');ctx.translate(KEY_EFFECT_BOUNDS.left,0);
+  // At most 1.9 logical pixels between samples; the alpha padding fills subpixel gaps.
+  for(let step=0;step<=(mode==='megaphone'?80:0);step++){
+   drawKeyCloud(ctx,{character:'a',age:step/80,opacity:1},{silhouette:true,pose:mode});
+  }
+  cloudRectangles=rectanglesFromOccupancy(alphaToOccupancy(ctx.getImageData(0,0,canvas.width,HEIGHT).data,canvas.width,HEIGHT,{cellSize:2,padding:1}));
+  cloudRegions.set(mode,cloudRectangles);
+ }
+ return {...base,rects:[...base.rects,...cloudRectangles]};
+}
 
 /** Quantize alpha conservatively, retaining holes and the empty window margins. */
 export function alphaToOccupancy(rgba,width,height,{cellSize=2,threshold=4,padding=1}={}){

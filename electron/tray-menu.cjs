@@ -14,6 +14,7 @@ function trayTemplate({settings,appearance,action,updateSettings,recover,resize,
     {label:'全部重置 (Space+Backspace)',click:()=>action('reset')},
     {type:'separator'},
     toggle('eyeTracking','目光跟随鼠标'),toggle('hairMotion','头发、衣摆与腿部摆动'),
+    toggle('keyDisplay','按键云朵（只显示一个字符）'),
     toggle('alwaysOnTop','始终置顶'),toggle('clickThrough','点击穿透（托盘或 Ctrl+Alt+P 恢复）'),
     toggle('legacyHotkeys','Space 全局组合键'),toggle('alternateHotkeys','备用 Ctrl+Alt 全局组合键'),
     {label:`大小：${percent(settings.scale)}`,submenu:[

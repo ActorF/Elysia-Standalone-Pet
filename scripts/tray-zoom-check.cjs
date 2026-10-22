@@ -123,7 +123,8 @@ const server=createServer((request,response)=>{
       if(scale===.01)assert.ok(state.visible<=256,'Shrinking to 1% clears all old large-character pixels');
       assert.ok(state.region?.rects.length>0,`Hit shape remains available at ${scale*100}%`);
       assert.equal(state.region.space,'character');
-      assert.equal(state.region.width,600);assert.equal(state.region.height,800);
+      assert.equal(state.region.width,740);assert.equal(state.region.height,800);
+      assert.equal(state.region.originX,-140);assert.equal(state.region.referenceWidth,600);
       for(const rect of state.region.rects){
         assert.ok([rect.x,rect.y,rect.width,rect.height].every(Number.isFinite),'Native hit geometry remains finite');
         assert.ok(rect.x>=-1&&rect.y>=-1&&rect.x+rect.width<=state.region.width+1&&rect.y+rect.height<=state.region.height+1,'Canonical geometry never expands into huge virtual coordinates');

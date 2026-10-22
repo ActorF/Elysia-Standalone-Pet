@@ -22,7 +22,7 @@ function command(program, args) {
 }
 
 function desktopProcesses() {
-  const query = "ConvertTo-Json -InputObject @(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and ($_.Name -match 'Elysia|爱莉希雅|electron' -or ($_.Name -eq 'powershell.exe' -and $_.CommandLine -like '*legacy-hotkeys.ps1 -ParentProcessId*')) } | Select-Object ProcessId,Name) -Depth 3";
+  const query = "ConvertTo-Json -InputObject @(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and ($_.Name -match 'Elysia|爱莉希雅|electron' -or ($_.Name -eq 'powershell.exe' -and ($_.CommandLine -like '*legacy-hotkeys.ps1 -ParentProcessId*' -or $_.CommandLine -like '*typed-keys.ps1 -ParentProcessId*'))) } | Select-Object ProcessId,Name) -Depth 3";
   return JSON.parse(command('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', query]));
 }
 

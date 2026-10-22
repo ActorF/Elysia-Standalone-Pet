@@ -4,14 +4,16 @@
 
 ## 下载程序
 
-**首版 1.0.0 · Windows 便携版**
+**1.1.0 · Windows 便携版（待发布）**
 
-- [下载 Windows 便携版 1.0.0](https://github.com/ActorF/Elysia_desktop_pet/releases/download/v1.0.0/Elysia_desktop_pet-1.0.0.exe)：双击运行，无需安装 Node.js。
-- [查看首版发布页面](https://github.com/ActorF/Elysia_desktop_pet/releases/tag/v1.0.0) · [SHA256 校验文件](https://github.com/ActorF/Elysia_desktop_pet/releases/download/v1.0.0/Elysia_desktop_pet-1.0.0.exe.sha256)
+1.1.0 程序已在本地打包，尚未发布 GitHub Release，以下 1.1.0 下载链接会在正式发布后生效。现在可从 [1.0.0 发布页面](https://github.com/ActorF/Elysia_desktop_pet/releases/tag/v1.0.0) 下载已发布版本。
+
+- [下载 Windows 便携版 1.1.0](https://github.com/ActorF/Elysia_desktop_pet/releases/download/v1.1.0/Elysia_desktop_pet-1.1.0.exe)：双击运行，无需安装 Node.js。
+- [查看 1.1.0 发布页面](https://github.com/ActorF/Elysia_desktop_pet/releases/tag/v1.1.0) · [SHA256 校验文件](https://github.com/ActorF/Elysia_desktop_pet/releases/download/v1.1.0/Elysia_desktop_pet-1.1.0.exe.sha256)
 
 **下载提示：** 当前版本未进行数字签名。如果 Edge 提示“isn't commonly downloaded（不常下载）”，确认文件来自本仓库发布页后，在下载列表选择 **⋯ → 保留 → 显示更多 → 仍然保留**，等待下载完成。[微软操作说明](https://learn.microsoft.com/en-us/troubleshoot/microsoft-edge/development/download-failures#check-security-and-smartscreen-settings)
 
-**下载完成后，如果文件仍叫 `Unconfirmed 数字.crdownload`，可以将后缀改为 `.exe` 使用。** 先在文件资源管理器中显示“文件扩展名”，再将完整文件名改为 **`Elysia_desktop_pet-1.0.0.exe`**，不要保留末尾的 `.crdownload`。此操作只适用于已经完整下载的文件；仍在下载或下载中断时，请先完成下载。
+**下载完成后，如果文件仍叫 `Unconfirmed 数字.crdownload`，可以将后缀改为 `.exe` 使用。** 先在文件资源管理器中显示“文件扩展名”，再将完整文件名改为 **`Elysia_desktop_pet-1.1.0.exe`**，不要保留末尾的 `.crdownload`。此操作只适用于已经完整下载的文件；仍在下载或下载中断时，请先完成下载。
 
 程序运行后，所有设置都在右下角系统托盘的爱莉希雅图标中。若已有桌宠运行，请先从其托盘菜单退出。
 
@@ -57,6 +59,16 @@
 人物外的透明区域自动穿透，不妨碍操作后方窗口。普通滚轮不会缩放，鼠标经过或右键人物不会弹出设置面板。
 
 托盘还可以开关目光跟随、头发与衣摆和腿部摆动、始终置顶、整个人物点击穿透，以及两种全局快捷键。位置、大小和偏好会自动保存。
+
+### 按键云朵
+
+抬起的手心正上方会显示一朵圆润的浅粉白色云朵，每次只显示最近按下的一个字符。支持 `0–9`、`a–z`、`A–Z`、英文标点与符号；空格显示为 `␣`。Shift 和 Caps Lock 决定字母大小写，Shift 也会切换对应符号。
+
+Enter、Ctrl、Tab、方向键等功能键不显示，Ctrl／Alt／Win 快捷组合也不显示。连续输入直接替换前一个字符，最后一次输入后约 1 秒内消失。待机、吃蛋糕和喝奶茶时，云朵在手上方短暂停留后淡出；喇叭动作时，字符从喇叭口朝左上方飘出，并在 1 秒内逐渐淡出，附带手绘扩音弧线（仅图像效果）。可从托盘开关“按键云朵”，不影响原来的表情快捷键。按键仅用于即时显示，不记录或保存输入内容。
+
+![不同动作下的按键云朵](docs/media/key-cloud.png)
+
+[观看喇叭按键特效](docs/media/megaphone-key-cloud.webm)
 
 ### 表情快捷键
 

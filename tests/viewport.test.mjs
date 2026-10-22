@@ -4,6 +4,13 @@ import {canvasBacking,characterView} from '../renderer/viewport.mjs';
 import {createPointerTracking} from '../renderer/pointer-tracking.mjs';
 import {createPetState} from '../renderer/state.mjs';
 
+test('standalone preview includes the effect margin while keeping character coordinates intact',()=>{
+  assert.deepEqual(characterView(740,800,null),{x:140,y:0,scale:1});
+  const state=createPetState(),tracking=createPointerTracking(state,{gazeX:300,gazeY:250},()=>100);
+  tracking.sample({localX:440,localY:250,width:740,height:800});
+  assert.deepEqual(state.target,{x:0,y:0});
+});
+
 test('large and high-DPI viewports keep bounded backing pixels without changing character scale',()=>{
   for(const [width,height,dpr] of [[27,34,1.25],[420,560,2],[2560,1440,2],[8192,8192,4]]){
     const backing=canvasBacking(width,height,dpr);

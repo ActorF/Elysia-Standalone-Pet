@@ -47,7 +47,8 @@ const server = createServer((request, response) => {
       for (const [method, counter] of [['clearRect', 'clears'], ['drawImage', 'draws']]) {
         const original = CanvasRenderingContext2D.prototype[method];
         CanvasRenderingContext2D.prototype[method] = function(...args) {
-          if (this.canvas.id === 'pet') qa.metrics[counter]++;
+          // Count character repaints separately from clearing the negative-x effects margin.
+          if (this.canvas.id === 'pet' && (method !== 'clearRect' || args[0] >= 0)) qa.metrics[counter]++;
           return original.apply(this, args);
         };
       }
@@ -148,7 +149,8 @@ const server = createServer((request, response) => {
     assert.equal(resized.clears, 1, 'Actual scale change redraws exactly once while held');
     assert.equal(resized.resets, 2, 'Actual scale change replaces both backing dimensions once');
     assert.equal(resized.time, beforeResize.time);
-    assert.equal(resized.hitRegion.width, 600); assert.equal(resized.hitRegion.height, 800);
+    assert.equal(resized.hitRegion.width, 740); assert.equal(resized.hitRegion.height, 800);
+    assert.equal(resized.hitRegion.originX, -140); assert.equal(resized.hitRegion.referenceWidth, 600);
     assert.equal(resized.hitRegion.space, 'character', 'Shape stays in canonical coordinates across viewport resizing');
     report.checks.push({ name: 'actual viewport resize', ...resized, state: undefined, hitRegion: undefined });
     await pausedCheck('removed panel actions stay inert while held', async () => {

@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('elysiaDesktop', Object.freeze({
   onPointer: (callback) => subscribe('pet:pointer', callback),
   onDragState: (callback) => subscribe('pet:drag-state', callback),
   onAction: (callback) => subscribe('pet:action', callback),
+  onTypedKey: (callback) => subscribe('pet:typed-key', callback),
   onSettings: (callback) => subscribe('pet:settings', callback),
   onViewport: (callback) => subscribe('pet:viewport', callback),
   setSettings: (patch) => ipcRenderer.invoke('pet:set-settings', patch),

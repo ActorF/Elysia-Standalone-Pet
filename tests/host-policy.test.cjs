@@ -20,6 +20,10 @@ test('preferences reject unexpected values and allow one percent through extreme
   assert.deepEqual(dimensions(1), { width: 420, height: 560 });
   assert.equal(sanitizeSettings({ eyeTracking: false, hairMotion: false }).hairMotion, false);
   assert.equal(DEFAULT_SETTINGS.clickThrough, false);
+  assert.equal(DEFAULT_SETTINGS.keyDisplay, true);
+  assert.equal(sanitizeSettings({keyDisplay:false}).keyDisplay, false);
+  assert.equal(sanitizeSettings({keyDisplay:'false'}).keyDisplay, true);
+  assert.equal(sanitizeSettings({scale:2},sanitizeSettings({keyDisplay:false})).keyDisplay, false);
   const skins = sanitizeSettings({ cat: true, glasses: true });
   assert.equal(skins.cat, true); assert.equal(skins.glasses, true);
   assert.equal(sanitizeSettings({ scale: 1.1 }, skins).cat, true, 'Unrelated settings retain persisted skins');

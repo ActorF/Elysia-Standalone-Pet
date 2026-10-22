@@ -1,7 +1,7 @@
 {
   "name": "elysia_desktop_pet",
   "productName": "爱莉希雅桌宠",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "独立爱莉希雅桌面伙伴",
   "author": "ActorF",
@@ -40,7 +40,8 @@
       "ASSET-NOTICE.md"
     ],
     "asarUnpack": [
-      "electron/legacy-hotkeys.ps1"
+      "electron/legacy-hotkeys.ps1",
+      "electron/typed-keys.ps1"
     ],
     "win": {
       "target": "portable",

@@ -11,9 +11,10 @@ const {createDesktopPointer,POINTER_INTERVAL_MS,DRAG_INTERVAL_MS}=require('./des
 const {createDragLifecycle}=require('./drag-lifecycle.cjs');
 const {createTopmostController}=require('./window-layer.cjs');
 const {createWindowShape}=require('./window-shape.cjs');
-const {virtualBounds,planViewport,viewportSnapshot,zoomAt,zoomFromSteps,projectHitRegion}=require('./pet-viewport.cjs');
+const {virtualBounds,planViewport,viewportSnapshot,zoomAt,zoomFromSteps,sanitizeCharacterRegion,projectHitRegion}=require('./pet-viewport.cjs');
 const {trayTemplate}=require('./tray-menu.cjs');
 const {createViewportChannel}=require('./viewport-channel.cjs');
+const {createTypedKeyListener}=require('./typed-key-listener.cjs');
 
 const root = path.resolve(__dirname, '..');
 const rendererUrl = pathToFileURL(path.join(root, 'renderer', 'index.html')).href;
@@ -23,7 +24,7 @@ const isSmokeTest = process.argv.includes('--smoke-test') || smokeNativeHotkeys;
 app.setPath('userData', isSmokeTest
   ? path.join(app.getPath('temp'), 'elysia-pet-host-smoke')
   : path.join(app.getPath('appData'), 'Elysia Desktop Pet'));
-let pet, tray, settingsFile, pointerTimer, saveTimer, desktopPointer, dragLifecycle, topmost, windowShape, legacyProcess;
+let pet, tray, settingsFile, pointerTimer, saveTimer, desktopPointer, dragLifecycle, topmost, windowShape, legacyProcess, typingListener;
 let preferences = { ...DEFAULT_SETTINGS };
 let appearance = sanitizeAppearance();
 let savedPosition = null;
@@ -31,7 +32,7 @@ let characterBounds=null,viewport=null,logicalHitRegion=null,logicalHitRevision=
 let lastNativeTargetKey=null;
 const viewportChannel=createViewportChannel(payload=>send('pet:viewport',payload));
 let quitting = false;
-const hotkeys = { legacy: { active: false, error: null }, alternate: { active: false, failed: [] }, recovery: false };
+const hotkeys = { legacy: { active: false, error: null }, alternate: { active: false, failed: [] }, typing: { active: false, error: null }, recovery: false };
 
 function state() { return { settings: { ...preferences }, hotkeys: structuredClone(hotkeys), viewport:viewport?{...viewport}:null }; }
 function send(channel, data) {
@@ -115,6 +116,7 @@ function updateSettings(patch, anchor) {
   }
   if (preferences.legacyHotkeys !== previous.legacyHotkeys) configureLegacyHotkeys();
   if (preferences.alternateHotkeys !== previous.alternateHotkeys) configureAlternateHotkeys();
+  if (preferences.keyDisplay !== previous.keyDisplay) configureTypedKeys();
   saveSettings();
   publishSettings();
   return state();
@@ -140,6 +142,19 @@ function applyHitRegion() {
   const applied=windowShape?.update(projectHitRegion(logicalHitRegion,viewport))??false;
   if(applied)projectedHitKey=key;
   return applied;
+}
+
+function configureTypedKeys() {
+  if (!typingListener) {
+    let script = path.join(__dirname, 'typed-keys.ps1');
+    if (app.isPackaged) script = script.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
+    typingListener = createTypedKeyListener({
+      spawn, script,
+      onCharacter: character => { if (preferences.keyDisplay && !quitting) send('pet:typed-key', character); },
+      onStatus: value => { hotkeys.typing = value; if (!quitting) publishSettings(); },
+    });
+  }
+  typingListener.start(preferences.keyDisplay);
 }
 
 function configureLegacyHotkeys() {
@@ -215,7 +230,7 @@ function registerIpc() {
   ipcMain.handle('pet:set-hit-region', (event, region) => {
     if(!trusted(event))return false;
     if(region?.space==='character'){
-      const clean=require('./window-shape.cjs').sanitizePacket(region);
+      const clean=sanitizeCharacterRegion(region);
       if(!clean)return false;
       logicalHitRegion=clean;logicalHitRevision++;return applyHitRegion();
     }
@@ -302,7 +317,7 @@ async function createWindow() {
     if (renderer.rendering?.mode !== 'mesh') {
       throw new Error('Desktop character mesh rendering smoke check failed');
     }
-    const desktopChecks=smokeNativeHotkeys?null:require('./desktop-smoke.cjs').checkDesktopWindow({window:pet,pointer:desktopPointer,topmost,place:placePet,displays:screen.getAllDisplays(),shape:windowShape});
+    const desktopChecks=smokeNativeHotkeys?null:require('./desktop-smoke.cjs').checkDesktopWindow({window:pet,getState:state,pointer:desktopPointer,topmost,place:placePet,displays:screen.getAllDisplays(),shape:windowShape});
     if(desktopChecks)desktopChecks.zoom=await require('./zoom-smoke.cjs').checkDesktopZoom({window:pet,getState:state,resize:resizePet,place:placePet,pointer:desktopPointer,shape:windowShape});
     console.log(JSON.stringify({ smoke: 'ok', nativeSpaceChord: smokeNativeHotkeys ? 'passed-on-own-foreground-window' : 'not-requested', renderer, desktopChecks, bounds: pet.getBounds(), security: { sandbox: webPreferences.sandbox, contextIsolation: webPreferences.contextIsolation, nodeIntegration: webPreferences.nodeIntegration } }));
     app.quit();
@@ -328,6 +343,7 @@ else {
     hotkeys.recovery = globalShortcut.register('CommandOrControl+Alt+P', () => recover());
     configureAlternateHotkeys();
     configureLegacyHotkeys();
+    configureTypedKeys();
     await createWindow();
     const constrainToScreen = () => { if (pet && !pet.isDestroyed()) { dragLifecycle?.cancelDrag();placePet(restoreBounds(characterBounds??pet.getBounds(),screen.getAllDisplays(),bounds=>bounds));topmost?.refresh(); } };
     screen.on('display-removed', constrainToScreen);
@@ -351,6 +367,7 @@ app.on('before-quit', () => {
   }
   if (legacyProcess) legacyProcess.kill();
   legacyProcess = null;
+  typingListener?.stop();
   globalShortcut.unregisterAll();
   if (tray) tray.destroy();
 });

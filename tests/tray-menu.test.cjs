@@ -7,9 +7,9 @@ test('the tray exposes every persistent switch, expression, skin and pose withou
   const template=trayTemplate({settings,appearance:sanitizeAppearance(),action:action=>calls.push(action),updateSettings:patch=>calls.push(patch),recover:reset=>calls.push({recover:reset}),resize:scale=>calls.push({scale}),quit:()=>calls.push('quit')});
   assert.equal(JSON.stringify(template).includes('show-controls'),false);
   const toggles=template.filter(item=>item.type==='checkbox');
-  assert.equal(toggles.length,6);
+  assert.equal(toggles.length,7);
   for(const item of toggles)item.click({checked:false});
-  assert.deepEqual(new Set(calls.flatMap(Object.keys)),new Set(['eyeTracking','hairMotion','alwaysOnTop','clickThrough','legacyHotkeys','alternateHotkeys']));
+  assert.deepEqual(new Set(calls.flatMap(Object.keys)),new Set(['eyeTracking','hairMotion','keyDisplay','alwaysOnTop','clickThrough','legacyHotkeys','alternateHotkeys']));
   const submenus=template.filter(item=>item.submenu);
   assert.equal(submenus[0].submenu.length,10);assert.equal(submenus[1].submenu.length,2);assert.equal(submenus[2].submenu.length,4);
   for(const menu of submenus.slice(0,3))for(const item of menu.submenu)item.click();

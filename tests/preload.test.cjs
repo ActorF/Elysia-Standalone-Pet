@@ -53,6 +53,9 @@ test('preload keeps event metadata private and removes subscriptions cleanly', (
   const stopDrag=bridge.onDragState(active=>{received=active;});
   listeners.get('pet:drag-state')({sender:'hidden'},true);assert.equal(received,true);
   stopDrag();assert.equal(listeners.has('pet:drag-state'),false);
+  const stopTyped = bridge.onTypedKey((...args) => { received = args; });
+  listeners.get('pet:typed-key')({sender:'hidden'}, 'A'); assert.deepEqual(received, ['A']);
+  stopTyped(); assert.equal(listeners.has('pet:typed-key'),false);
   const region={width:420,height:560,rects:[{x:20,y:30,width:40,height:50}]};
   bridge.setHitRegion(region);assert.deepEqual(invocations.at(-1),['pet:set-hit-region',region]);
 });

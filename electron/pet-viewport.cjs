@@ -3,7 +3,9 @@
 // Character geometry is virtual. Only its visible desktop intersection becomes
 // a native window, so growing a pet never allocates a pet-sized GPU surface.
 const { sanitizeSettings } = require('./host-policy.cjs');
+const { sanitizePacket } = require('./window-shape.cjs');
 const MAX_NATIVE_EXTENT = 8192;
+const CHARACTER_WIDTH = 600, CHARACTER_HEIGHT = 800, EFFECT_LEFT_PADDING = 140;
 const finite = value => Number.isFinite(value);
 const valid = box => box && ['x','y','width','height'].every(key => finite(box[key])) && box.width > 0 && box.height > 0;
 const area = box => box.width * box.height;
@@ -28,13 +30,20 @@ function virtualBounds(position,scale) {
   return {width:420*scale,height:560*scale,x:finite(position?.x)?position.x:0,y:finite(position?.y)?position.y:0};
 }
 function planViewport(character,displays=[]) {
-  const desktop=desktopArea(displays,character);
-  const clipped=character.width>desktop.width||character.height>desktop.height
-    ||character.width>MAX_NATIVE_EXTENT||character.height>MAX_NATIVE_EXTENT;
+  // Reserve the effects area continuously. Typing never moves or resizes the
+  // window; the character's original virtual bounds remain the drag/zoom anchor.
+  const padding=character.width*(EFFECT_LEFT_PADDING/CHARACTER_WIDTH);
+  const drawing={...character,x:character.x-padding,width:character.width+padding};
+  const desktop=desktopArea(displays,drawing);
+  const clipped=drawing.width>desktop.width||drawing.height>desktop.height
+    ||drawing.width>MAX_NATIVE_EXTENT||drawing.height>MAX_NATIVE_EXTENT;
   let native;
-  if(!clipped)native={x:Math.round(character.x),y:Math.round(character.y),width:Math.max(1,Math.ceil(character.width)),height:Math.max(1,Math.ceil(character.height))};
+  if(!clipped){
+    const x=Math.floor(drawing.x),y=Math.floor(drawing.y);
+    native={x,y,width:Math.max(1,Math.ceil(drawing.width+(drawing.x-x))),height:Math.max(1,Math.ceil(drawing.height+(drawing.y-y)))};
+  }
   else {
-    const overlap=intersection(character,desktop);
+    const overlap=intersection(drawing,desktop);
     if(overlap.width&&overlap.height){
       const x=Math.floor(overlap.x),y=Math.floor(overlap.y);
       native={x,y,width:Math.max(1,Math.ceil(overlap.x+overlap.width)-x),height:Math.max(1,Math.ceil(overlap.y+overlap.height)-y)};
@@ -61,11 +70,27 @@ function zoomFromSteps(character,currentScale,steps,anchor) {
   const next=finite(candidate)?candidate:Number.MAX_VALUE/2**20;
   return zoomAt(character,currentScale,next,anchor);
 }
+/** Only the established character coordinate system and its fixed left extension are accepted. */
+function sanitizeCharacterRegion(value) {
+  if(!value||value.height!==CHARACTER_HEIGHT)return null;
+  const legacy=value.width===CHARACTER_WIDTH
+    &&(value.originX===undefined||value.originX===0)
+    &&(value.referenceWidth===undefined||value.referenceWidth===CHARACTER_WIDTH);
+  const extended=value.width===CHARACTER_WIDTH+EFFECT_LEFT_PADDING
+    &&value.originX===-EFFECT_LEFT_PADDING&&value.referenceWidth===CHARACTER_WIDTH;
+  if(!legacy&&!extended)return null;
+  const clean=sanitizePacket(value);
+  if(!clean)return null;
+  // Extended packets contain positive rectangle coordinates. Restore the
+  // logical negative x only during projection, after bounds validation.
+  return extended?{...clean,originX:-EFFECT_LEFT_PADDING,referenceWidth:CHARACTER_WIDTH}:clean;
+}
 function projectHitRegion(region,viewport) {
-  const sx=Math.min(viewport.characterWidth/region.width,viewport.characterHeight/region.height),sy=sx,rects=[];
+  const sx=Math.min(viewport.characterWidth/(region.referenceWidth??region.width),viewport.characterHeight/region.height),sy=sx,rects=[];
+  const originX=region.originX??0;
   for(const rect of region.rects){
-    const x=Math.max(0,viewport.characterX+rect.x*sx),y=Math.max(0,viewport.characterY+rect.y*sy);
-    const right=Math.min(viewport.width,viewport.characterX+(rect.x+rect.width)*sx);
+    const x=Math.max(0,viewport.characterX+(rect.x+originX)*sx),y=Math.max(0,viewport.characterY+rect.y*sy);
+    const right=Math.min(viewport.width,viewport.characterX+(rect.x+originX+rect.width)*sx);
     const bottom=Math.min(viewport.height,viewport.characterY+(rect.y+rect.height)*sy);
     if(right>x&&bottom>y)rects.push({x,y,width:right-x,height:bottom-y});
   }
@@ -75,4 +100,4 @@ function projectHitRegion(region,viewport) {
   return {width:viewport.width,height:viewport.height,rects};
 }
 
-module.exports={MAX_NATIVE_EXTENT,intersection,desktopArea,virtualBounds,planViewport,viewportSnapshot,zoomAt,zoomFromSteps,projectHitRegion};
+module.exports={MAX_NATIVE_EXTENT,intersection,desktopArea,virtualBounds,planViewport,viewportSnapshot,zoomAt,zoomFromSteps,sanitizeCharacterRegion,projectHitRegion};
