@@ -4,9 +4,9 @@
 
 ## 下载程序
 
-**1.1.0 · Windows 便携版（待发布）**
+**1.1.0 · Windows 便携版**
 
-1.1.0 程序已在本地打包，尚未发布 GitHub Release，以下 1.1.0 下载链接会在正式发布后生效。现在可从 [1.0.0 发布页面](https://github.com/ActorF/Elysia_desktop_pet/releases/tag/v1.0.0) 下载已发布版本。
+本次新增按键云朵和喇叭字符特效。升级前请从托盘退出旧版，再运行新版程序，已有设置会保留。
 
 - [下载 Windows 便携版 1.1.0](https://github.com/ActorF/Elysia_desktop_pet/releases/download/v1.1.0/Elysia_desktop_pet-1.1.0.exe)：双击运行，无需安装 Node.js。
 - [查看 1.1.0 发布页面](https://github.com/ActorF/Elysia_desktop_pet/releases/tag/v1.1.0) · [SHA256 校验文件](https://github.com/ActorF/Elysia_desktop_pet/releases/download/v1.1.0/Elysia_desktop_pet-1.1.0.exe.sha256)
