@@ -7,6 +7,12 @@ const { createServer } = require('node:http');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
 const destination = path.join(root, 'docs', 'media');
+const english = process.argv.includes('--language=en');
+const localized = (chinese, translation) => english ? translation : chinese;
+const galleryFilename = name => `${name}${english ? '.en' : ''}.png`;
+const expressionLabels = { blush: 'Blush', angry: 'Angry', sleep: 'Sleep', surprise: 'Surprised',
+  dizzy: 'Dizzy', wink: 'Wink', cry: 'Sad', heart: 'Heart eyes', smile: 'Smile', awkward: 'Awkward' };
+const poseLabels = { idle: 'Idle', megaphone: 'Megaphone', cake: 'Cake', tea: 'Bubble tea' };
 const mime = { '.html': 'text/html', '.css': 'text/css', '.mjs': 'text/javascript', '.js': 'text/javascript', '.png': 'image/png', '.json': 'application/json' };
 const server = createServer((request, response) => {
   try {
@@ -26,8 +32,9 @@ function savePng(filename, data) {
 }
 async function gallery(browser, filename, title, subtitle, entries, imageHeight) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 100 }, deviceScaleFactor: 1 });
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
   try {
-    await page.setContent(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><style>
+    await page.setContent(`<!doctype html><html lang="${english ? 'en' : 'zh-CN'}"><meta charset="utf-8"><style>
       *{box-sizing:border-box}body{margin:0;padding:40px;background:#faf8fb;color:#392c43;font-family:'Microsoft YaHei UI','Microsoft YaHei','Segoe UI',sans-serif}
       header{display:flex;align-items:flex-end;justify-content:space-between;gap:32px;margin-bottom:28px}.brand{font-size:11px;font-weight:600;letter-spacing:3px;color:#a3698c;margin-bottom:10px}
       h1{margin:0;font-size:29px;letter-spacing:1px;font-weight:600}p{margin:0 0 3px;color:#7a6d82;font-size:15px;line-height:1.7;max-width:620px;text-align:right}
@@ -36,11 +43,12 @@ async function gallery(browser, filename, title, subtitle, entries, imageHeight)
       img{display:block;width:100%;height:100%;object-fit:contain}figcaption{text-align:center;margin-top:15px;font-size:17px;font-weight:600}
       .key{display:block;margin-top:6px;font-size:13px;line-height:1.5;font-weight:400;color:#86758d}.note{padding:26px;display:flex;flex-direction:column;justify-content:center;color:#766480;line-height:1.9;font-size:16px;background:#f2edf6}
       .note strong{color:#594164;font-size:20px;font-weight:500;margin-bottom:14px}.note span{font-size:14px}
-    </style><header><div><div class="brand">Elysia_desktop_pet · 爱莉希雅桌宠</div><h1>${escape(title)}</h1></div><p>${escape(subtitle)}</p></header><main>${entries.map(entry => entry.note
+    </style><header><div><div class="brand">${localized('Elysia_desktop_pet · 爱莉希雅桌宠', 'Elysia_desktop_pet · Elysia Desktop Pet')}</div><h1>${escape(title)}</h1></div><p>${escape(subtitle)}</p></header><main>${entries.map(entry => entry.note
       ? `<figure class="note"><strong>${escape(entry.label)}</strong><span>${escape(entry.note)}</span></figure>`
       : `<figure><div class="image"><img src="${entry.data}" alt="${escape(entry.label)}"></div><figcaption>${escape(entry.label)}<span class="key">${escape(entry.key || '')}</span></figcaption></figure>`).join('')}</main></html>`);
     await page.evaluate(() => Promise.all([...document.images].map(image => image.decode())));
     await page.screenshot({ path: path.join(destination, filename), fullPage: true });
+    assert.deepEqual(errors, [], `Gallery raised errors: ${filename}`);
   } finally { await page.close(); }
 }
 async function captureMotion(page) {
@@ -89,28 +97,28 @@ async function captureMotion(page) {
         return canvas.toDataURL();
       }, { options, crop });
     }
-    savePng('character.png', await render({}));
+    if (!english) savePng('character.png', await render({}));
     const faces = [];
     // Include sheep / dizzy decorations, along with both eyes, eyebrows and mouth.
     const head = { x: 55, y: 0, width: 545, height: 445 };
-    faces.push({ label: '默认', key: '再按当前表情键可恢复', data: await render({}, head) });
-    for (const expression of expressions) faces.push({ label: expression.label, key: `Space + ${expression.key}`, data: await render({ expression: expression.id }, head) });
-    faces.push({ label: '自由搭配', note: '表情、装扮与动作独立切换。再次按下当前表情键，恢复默认表情；当前动作与装扮继续保留。' });
-    await gallery(browser, 'expressions.png', '默认 + 10 种表情', '数字键切换心情，也可从托盘菜单选择。', faces, 260);
+    faces.push({ label: localized('默认', 'Default'), key: localized('再按当前表情键可恢复', 'Press the active shortcut again'), data: await render({}, head) });
+    for (const expression of expressions) faces.push({ label: english ? expressionLabels[expression.id] : expression.label, key: `Space + ${expression.key}`, data: await render({ expression: expression.id }, head) });
+    faces.push({ label: localized('自由搭配', 'Mix and match'), note: localized('表情、装扮与动作独立切换。再次按下当前表情键，恢复默认表情；当前动作与装扮继续保留。', 'Expressions, accessories and actions are independent. Press the active expression shortcut again to return to the default face. Your action and accessories stay selected.') });
+    await gallery(browser, galleryFilename('expressions'), localized('默认 + 10 种表情', 'Default + 10 expressions'), localized('数字键切换心情，也可从托盘菜单选择。', 'Choose a mood with number shortcuts or the tray menu.'), faces, 260);
     const forms = [
-      { label: '普通形态', key: '两个装扮开关均关闭', options: {} },
-      { label: '猫猫形态', key: 'Space + F1', options: { cat: true } },
-      { label: '眼镜', key: 'Space + F2', options: { glasses: true } },
-      { label: '猫猫 + 眼镜', key: 'Space + F1 / F2 可同时开启', options: { cat: true, glasses: true } },
+      { label: localized('普通形态', 'Original'), key: localized('两个装扮开关均关闭', 'Both accessories off'), options: {} },
+      { label: localized('猫猫形态', 'Cat form'), key: 'Space + F1', options: { cat: true } },
+      { label: localized('眼镜', 'Glasses'), key: 'Space + F2', options: { glasses: true } },
+      { label: localized('猫猫 + 眼镜', 'Cat form + glasses'), key: localized('Space + F1 / F2 可同时开启', 'Enable both: Space + F1 / F2'), options: { cat: true, glasses: true } },
     ];
     for (const form of forms) form.data = await render(form.options);
-    await gallery(browser, 'forms.png', '两种装扮，四种搭配', '猫猫与眼镜是独立开关，切换表情和动作时保持。', forms, 430);
+    await gallery(browser, galleryFilename('forms'), localized('两种装扮，四种搭配', 'Two toggles, four looks'), localized('猫猫与眼镜是独立开关，切换表情和动作时保持。', 'Cat form and glasses stay on across expressions and actions.'), forms, 430);
     const actions = [];
-    for (const pose of poses) actions.push({ label: pose.label, key: `Space + ${pose.key}`, data: await render({ pose: pose.id }) });
-    await gallery(browser, 'actions.png', '四种动作', '待机、喇叭、蛋糕与奶茶，任选一种持续展示。', actions, 430);
-    const motion = process.argv.includes('--motion') ? await captureMotion(page) : null;
+    for (const pose of poses) actions.push({ label: english ? poseLabels[pose.id] : pose.label, key: `Space + ${pose.key}`, data: await render({ pose: pose.id }) });
+    await gallery(browser, galleryFilename('actions'), localized('四种动作', 'Four actions'), localized('待机、喇叭、蛋糕与奶茶，任选一种持续展示。', 'Choose idle, megaphone, cake or bubble tea to keep on display.'), actions, 430);
+    const motion = !english && process.argv.includes('--motion') ? await captureMotion(page) : null;
     assert.deepEqual(errors, [], 'Renderer raised errors during README capture');
     console.log(JSON.stringify({ capture: 'ok', selectableExpressions: expressions.length, forms: forms.length, poses: poses.length,
-      files: ['character.png', 'expressions.png', 'forms.png', 'actions.png'], motion, destination }));
+      language: english ? 'en' : 'zh-CN', files: [...(english ? [] : ['character.png']), ...['expressions', 'forms', 'actions'].map(galleryFilename)], motion, destination }));
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => server.close());

@@ -1,29 +1,34 @@
-# 爱莉希雅桌宠 / Elysia_desktop_pet
+<h1 align="center">爱莉希雅桌宠</h1>
 
-爱莉希雅 Q 版 Windows 桌宠。透明全身立绘、鼠标目光跟随、轻柔摆动，搭配可自由组合的表情、装扮与动作。
+<p align="center">Elysia_desktop_pet · 陪在桌面上的 Q 版爱莉希雅</p>
+<p align="center"><strong>简体中文</strong> · <a href="README.en.md">English</a></p>
+<p align="center"><a href="#下载程序">下载程序</a> · <a href="#角色展示">角色展示</a> · <a href="#使用">使用说明</a> · <a href="#源码运行">源码运行</a></p>
+
+透明全身立绘、鼠标目光跟随、轻柔摆动。表情、猫猫形态、眼镜和四种动作可以自由搭配，输入字符时还有小云朵回应。
 
 ## 下载程序
 
-**1.1.0 · Windows 便携版**
+**[下载 Windows 便携版 · 1.1.0](https://github.com/ActorF/Elysia_desktop_pet/releases/download/v1.1.0/Elysia_desktop_pet-1.1.0.exe)**
 
-本次新增按键云朵和喇叭字符特效。升级前请从托盘退出旧版，再运行新版程序，已有设置会保留。
+[更新说明](https://github.com/ActorF/Elysia_desktop_pet/releases/tag/v1.1.0) · [SHA256 校验文件](https://github.com/ActorF/Elysia_desktop_pet/releases/download/v1.1.0/Elysia_desktop_pet-1.1.0.exe.sha256)
 
-- [下载 Windows 便携版 1.1.0](https://github.com/ActorF/Elysia_desktop_pet/releases/download/v1.1.0/Elysia_desktop_pet-1.1.0.exe)：双击运行，无需安装 Node.js。
-- [查看 1.1.0 发布页面](https://github.com/ActorF/Elysia_desktop_pet/releases/tag/v1.1.0) · [SHA256 校验文件](https://github.com/ActorF/Elysia_desktop_pet/releases/download/v1.1.0/Elysia_desktop_pet-1.1.0.exe.sha256)
+下载后双击 EXE 即可运行，无需安装 Node.js。所有设置都在右下角系统托盘的爱莉希雅图标中。升级前先从托盘退出旧版，已有设置会保留。
+
+<details>
+<summary>下载提示与文件后缀</summary>
 
 **下载提示：** 当前版本未进行数字签名。如果 Edge 提示“isn't commonly downloaded（不常下载）”，确认文件来自本仓库发布页后，在下载列表选择 **⋯ → 保留 → 显示更多 → 仍然保留**，等待下载完成。[微软操作说明](https://learn.microsoft.com/en-us/troubleshoot/microsoft-edge/development/download-failures#check-security-and-smartscreen-settings)
 
 **下载完成后，如果文件仍叫 `Unconfirmed 数字.crdownload`，可以将后缀改为 `.exe` 使用。** 先在文件资源管理器中显示“文件扩展名”，再将完整文件名改为 **`Elysia_desktop_pet-1.1.0.exe`**，不要保留末尾的 `.crdownload`。此操作只适用于已经完整下载的文件；仍在下载或下载中断时，请先完成下载。
 
-程序运行后，所有设置都在右下角系统托盘的爱莉希雅图标中。若已有桌宠运行，请先从其托盘菜单退出。
+</details>
 
 ## 角色展示
 
 ### 全身立绘
 
-![爱莉希雅全身立绘](docs/media/character.png)
-
-[观看待机动画](docs/media/idle.webm)
+<p align="center"><img src="docs/media/character.png" width="400" alt="爱莉希雅全身立绘"></p>
+<p align="center"><a href="docs/media/idle.webm">观看待机动画</a></p>
 
 ### 全部表情
 
@@ -42,6 +47,14 @@
 日常待机、听我说呀！、吃蛋糕、喝奶茶四选一。切换表情或装扮时，当前动作保持不变。喇叭动作不播放声音。
 
 ![日常待机、喇叭、吃蛋糕与喝奶茶](docs/media/actions.png)
+
+### 按键云朵
+
+**1.1.0 新增。** 输入一个字符，手心上方就会出现一朵浅粉白色云朵。喇叭动作会将字符向外送出，带有扩音弧线，约一秒消失。
+
+![待机、奶茶、蛋糕和喇叭动作下的按键云朵](docs/media/key-cloud.png)
+
+<p align="center"><a href="docs/media/megaphone-key-cloud.webm">观看喇叭按键特效</a> · 仅图像效果，无声音</p>
 
 ## 使用
 
@@ -65,10 +78,6 @@
 抬起的手心正上方会显示一朵圆润的浅粉白色云朵，每次只显示最近按下的一个字符。支持 `0–9`、`a–z`、`A–Z`、英文标点与符号；空格显示为 `␣`。Shift 和 Caps Lock 决定字母大小写，Shift 也会切换对应符号。
 
 Enter、Ctrl、Tab、方向键等功能键不显示，Ctrl／Alt／Win 快捷组合也不显示。连续输入直接替换前一个字符，最后一次输入后约 1 秒内消失。待机、吃蛋糕和喝奶茶时，云朵在手上方短暂停留后淡出；喇叭动作时，字符从喇叭口朝左上方飘出，并在 1 秒内逐渐淡出，附带手绘扩音弧线（仅图像效果）。可从托盘开关“按键云朵”，不影响原来的表情快捷键。按键仅用于即时显示，不记录或保存输入内容。
-
-![不同动作下的按键云朵](docs/media/key-cloud.png)
-
-[观看喇叭按键特效](docs/media/megaphone-key-cloud.webm)
 
 ### 表情快捷键
 
@@ -119,7 +128,7 @@ npm run make:portable
 node scripts/verify-package.cjs
 ```
 
-便携版生成在 `release/`。`npm run package` 可生成未封装的应用目录；`npm run preview:expressions` 和 `npm run preview:motion` 可生成表情截图与待机录像。更多检查见[验证说明](docs/verification.md)。
+便携版生成在 `release/`。`npm run package` 可生成未封装的应用目录；`npm run preview:expressions` 和 `npm run preview:motion` 可生成表情截图与待机录像。`node scripts/key-cloud-preview.cjs` 生成按键云朵展示图。更多检查见[验证说明](docs/verification.md)。
 
 ## 项目结构
 
