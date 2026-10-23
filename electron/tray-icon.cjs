@@ -1,32 +1,35 @@
-// Generate a tiny original flower icon without runtime files or external image dependencies.
+// Pink emblem with transparent background, cropped to fill the native tray slot.
 'use strict';
-const zlib = require('node:zlib');
-function crc32(buffer) {
-  let crc = 0xffffffff;
-  for (const byte of buffer) {
-    crc ^= byte;
-    for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-}
-function chunk(kind, data) {
-  const name = Buffer.from(kind);
-  const size = Buffer.alloc(4); size.writeUInt32BE(data.length);
-  const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(Buffer.concat([name, data])));
-  return Buffer.concat([size, name, data, crc]);
-}
+const fs = require('node:fs');
+const path = require('node:path');
+let png;
 function trayPng() {
-  const pixels = Buffer.alloc(32 * (32 * 4 + 1));
-  for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
-    const dx = x - 15.5, dy = y - 15.5;
-    const radius = Math.hypot(dx, dy);
-    const flower = 7 + 3 * Math.cos(5 * Math.atan2(dy, dx));
-    const offset = y * 129 + 1 + x * 4;
-    const color = radius < 3 ? [246, 179, 214, 255] : radius < flower ? [255, 248, 255, 255] : radius < 15 ? [204, 103, 161, 255] : [0, 0, 0, 0];
-    for (let c = 0; c < 4; c++) pixels[offset + c] = color[c];
-  }
-  const header = Buffer.alloc(13);
-  header.writeUInt32BE(32, 0); header.writeUInt32BE(32, 4); header[8] = 8; header[9] = 6;
-  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', header), chunk('IDAT', zlib.deflateSync(pixels)), chunk('IEND', Buffer.alloc(0))]);
+  png ??= fs.readFileSync(path.join(__dirname, '..', 'assets', 'ui', 'tray-icon.png'));
+  return png;
 }
-module.exports = { trayPng };
+
+function createTrayImage(nativeImage) {
+  const source = nativeImage.createFromBuffer(trayPng());
+  const { width, height } = source.getSize();
+  const bitmap = source.toBitmap();
+  let left = width, top = height, right = -1, bottom = -1;
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    // Ignore almost-transparent generation residue when fitting the actual emblem.
+    if (bitmap[(y * width + x) * 4 + 3] < 8) continue;
+    left = Math.min(left, x); top = Math.min(top, y);
+    right = Math.max(right, x); bottom = Math.max(bottom, y);
+  }
+  let image = source;
+  if (right >= left && bottom >= top) {
+    // Keep the proportions and about half an output pixel around the tips.
+    const contentSize = Math.max(right - left + 1, bottom - top + 1);
+    const padding = Math.max(2, Math.ceil(contentSize / 64));
+    const side = Math.min(width, height, contentSize + padding * 2);
+    const x = Math.max(0, Math.min(width - side, Math.floor((left + right + 1 - side) / 2)));
+    const y = Math.max(0, Math.min(height - side, Math.floor((top + bottom + 1 - side) / 2)));
+    image = source.crop({ x, y, width: side, height: side });
+  }
+  return image.resize({ width: 32, height: 32, quality: 'best' });
+}
+
+module.exports = { trayPng, createTrayImage };

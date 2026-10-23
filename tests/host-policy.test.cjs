@@ -30,6 +30,91 @@ test('preferences reject unexpected values and allow one percent through extreme
   assert.equal(sanitizeSettings({ cat: 'false', glasses: 0 }, skins).glasses, true, 'Skin values must be booleans');
 });
 
+test('taskbar preference defaults behind the pet and survives unrelated changes and persisted reloads', () => {
+  assert.equal(DEFAULT_SETTINGS.taskbarInFront, false);
+  assert.equal(sanitizeSettings({}).taskbarInFront, false);
+  const { taskbarInFront, ...legacySettings } = DEFAULT_SETTINGS;
+  assert.equal(sanitizeSettings(legacySettings).taskbarInFront, false, 'Old saved settings keep the released layer order');
+  assert.equal(sanitizeSettings({ scale: 2 }, legacySettings).taskbarInFront, false);
+  const front = sanitizeSettings({ taskbarInFront: true });
+  assert.equal(front.taskbarInFront, true);
+  const changed = sanitizeSettings({ alwaysOnTop: false, scale: 2, clickThrough: true }, front);
+  assert.equal(changed.taskbarInFront, true, 'Turning off always-on-top preserves the chosen taskbar preference');
+  const reloaded = sanitizeSettings(JSON.parse(JSON.stringify(changed)));
+  assert.deepEqual(reloaded, changed);
+  assert.equal(sanitizeSettings({ alwaysOnTop: true }, reloaded).taskbarInFront, true);
+  for (const invalid of [null, 'true', 'false', 0, 1, [], {}]) {
+    assert.equal(sanitizeSettings({ taskbarInFront: invalid }).taskbarInFront, false);
+    assert.equal(sanitizeSettings({ taskbarInFront: invalid }, front).taskbarInFront, true);
+  }
+  assert.equal(sanitizeSettings({ taskbarInFront: false }, front).taskbarInFront, false);
+});
+
+test('motion preferences migrate old settings and retain independent choices across reloads', () => {
+  assert.equal(DEFAULT_SETTINGS.motionAmplitude, 1);
+  assert.equal(DEFAULT_SETTINGS.motionSpeed, 1);
+  const { motionAmplitude, motionSpeed, ...legacySettings } = DEFAULT_SETTINGS;
+  for (const settings of [sanitizeSettings(legacySettings), sanitizeSettings({}, legacySettings)]) {
+    assert.equal(settings.motionAmplitude, 1);
+    assert.equal(settings.motionSpeed, 1);
+  }
+  const previous = Object.freeze(sanitizeSettings({
+    motionAmplitude: 0.75, motionSpeed: 1.5, hairMotion: false,
+    taskbarInFront: true, clickThrough: true, cat: true, glasses: true, scale: 2,
+  }));
+  const patch = Object.freeze({ motionAmplitude: 1.25 });
+  const next = sanitizeSettings(patch, previous);
+  assert.deepEqual(next, { ...previous, motionAmplitude: 1.25 });
+  assert.equal(previous.motionAmplitude, 0.75, 'Updating the amplitude must not mutate the previous settings');
+  assert.deepEqual(sanitizeSettings(JSON.parse(JSON.stringify(next))), next);
+  assert.deepEqual(sanitizeSettings({ hairMotion: true }, next), { ...next, hairMotion: true });
+  assert.deepEqual(sanitizeSettings({ scale: 0.5 }, next), { ...next, scale: 0.5 });
+});
+
+test('motion preferences accept finite numbers only and clamp each independent range', () => {
+  const previous = sanitizeSettings({ motionAmplitude: 0.6, motionSpeed: 1.75 });
+  for (const invalid of [NaN, Infinity, -Infinity, null, undefined, '1', false, true, [], {}, new Number(1)]) {
+    const patch = { motionAmplitude: invalid, motionSpeed: invalid };
+    assert.equal(sanitizeSettings(patch).motionAmplitude, 1);
+    assert.equal(sanitizeSettings(patch).motionSpeed, 1);
+    assert.deepEqual(sanitizeSettings(patch, previous), previous, 'Invalid input cannot overwrite a valid saved choice');
+  }
+  assert.deepEqual(sanitizeSettings({ motionAmplitude: -5, motionSpeed: -5 }, previous), { ...previous, motionAmplitude: 0, motionSpeed: 0.25 });
+  assert.deepEqual(sanitizeSettings({ motionAmplitude: 500, motionSpeed: 500 }, previous), { ...previous, motionAmplitude: 2, motionSpeed: 3 });
+  for (const value of [0, 0.01, 0.65, 1, 1.9, 2]) assert.equal(sanitizeSettings({ motionAmplitude: value }).motionAmplitude, value);
+  for (const value of [0.25, 0.6, 1, 1.75, 3]) assert.equal(sanitizeSettings({ motionSpeed: value }).motionSpeed, value);
+  const damagedPrevious = { ...previous, motionAmplitude: NaN, motionSpeed: '2' };
+  assert.equal(sanitizeSettings({}, damagedPrevious).motionAmplitude, 1);
+  assert.equal(sanitizeSettings({}, damagedPrevious).motionSpeed, 1);
+});
+
+test('eye warp strength defaults to the original effect and survives tracking toggles and saved reloads', () => {
+  assert.equal(DEFAULT_SETTINGS.eyeWarpStrength, 1);
+  const { eyeWarpStrength, ...legacySettings } = DEFAULT_SETTINGS;
+  for (const settings of [sanitizeSettings(legacySettings), sanitizeSettings({}, legacySettings)]) {
+    assert.equal(settings.eyeWarpStrength, 1);
+  }
+  const previous = Object.freeze(sanitizeSettings({ eyeWarpStrength: 0.35, eyeTracking: false, motionAmplitude: 0.75, motionSpeed: 1.5, cat: true, glasses: true }));
+  const next = sanitizeSettings(Object.freeze({ eyeWarpStrength: 1.25 }), previous);
+  assert.deepEqual(next, { ...previous, eyeWarpStrength: 1.25 });
+  assert.equal(previous.eyeWarpStrength, 0.35);
+  assert.deepEqual(sanitizeSettings(JSON.parse(JSON.stringify(next))), next);
+  assert.deepEqual(sanitizeSettings({ eyeTracking: true }, next), { ...next, eyeTracking: true });
+  assert.deepEqual(sanitizeSettings({ motionAmplitude: 2, scale: 0.5 }, next), { ...next, motionAmplitude: 2, scale: 0.5 });
+});
+
+test('eye warp strength rejects invalid patches and clamps finite values without altering other preferences', () => {
+  const previous = sanitizeSettings({ eyeWarpStrength: 0.65, eyeTracking: false, motionSpeed: 2 });
+  for (const invalid of [NaN, Infinity, -Infinity, null, undefined, '1', false, true, [], {}, new Number(1)]) {
+    assert.equal(sanitizeSettings({ eyeWarpStrength: invalid }).eyeWarpStrength, 1);
+    assert.deepEqual(sanitizeSettings({ eyeWarpStrength: invalid }, previous), previous);
+    assert.equal(sanitizeSettings({}, { ...previous, eyeWarpStrength: invalid }).eyeWarpStrength, 1);
+  }
+  assert.deepEqual(sanitizeSettings({ eyeWarpStrength: -5 }, previous), { ...previous, eyeWarpStrength: 0 });
+  assert.deepEqual(sanitizeSettings({ eyeWarpStrength: 500 }, previous), { ...previous, eyeWarpStrength: 2 });
+  for (const value of [0, 0.01, 0.65, 1, 1.9, 2]) assert.equal(sanitizeSettings({ eyeWarpStrength: value }).eyeWarpStrength, value);
+});
+
 test('explicit recovery fits a normal pet and anchors an oversized pet on negative-coordinate monitors', () => {
   const workArea = { x: -1920, y: 0, width: 1920, height: 1040 };
   assert.deepEqual(fitBounds({ x: 9999, y: 9999, width: 420, height: 560 }, workArea), { x: -420, y: 480, width: 420, height: 560 });

@@ -1,4 +1,5 @@
 /** @fileoverview Independent face, pose and skin selections plus time-based animation. */
+import { motionAmplitude, motionSpeed, motionTime } from './motion-settings.mjs';
 export const EXPRESSIONS = [
   ['blush', '害羞', '1', '♡'], ['angry', '生气', '2', '╬'],
   ['sleep', '睡觉', '3', '☾'], ['surprise', '惊讶', '4', '!'],
@@ -19,7 +20,7 @@ export const POSES = [
 /** Creates independent renderer state; expression changes never alter desktop preferences. */
 export function createPetState() {
   return { expression: null, pose: 'idle', cat: false, glasses: false, gaze: { x: 0, y: 0 },
-    target: { x: 0, y: 0 }, time: 0, blink: 0, nextBlink: 3.2, blinkAge: -1,
+    target: { x: 0, y: 0 }, time: 0, motionTime: null, blink: 0, nextBlink: 3.2, blinkAge: -1,
     hair: 0, hairVelocity: 0, actionAge: 0 };
 }
 
@@ -68,13 +69,16 @@ export function setGazeTarget(state,x,y){
 /** Apply the latest cursor on this paint; decorative motion keeps its independent clock. */
 export function advance(state, elapsed, settings = {}) {
   const dt = Number.isFinite(elapsed)?Math.min(Math.max(elapsed, 0), 0.04):0;
+  // Integrate only this clock: changing speed must not jump to time * newSpeed
+  // or change blink timing, input effects, gaze response or drag behavior.
+  state.motionTime = motionTime(state, settings) + dt * motionSpeed(settings);
   state.time += dt;
   state.actionAge += dt;
   // The former exponential filter took roughly 256 ms to reach 90% of a new
   // target. Direct sampling responds on the next frame, including reversals.
   state.gaze.x = settings.eyeTracking === false ? 0 : gazeCoordinate(state.target.x);
   state.gaze.y = settings.eyeTracking === false ? 0 : gazeCoordinate(state.target.y);
-  const targetHair = settings.hairMotion === false ? 0 : Math.sin(state.time * 1.05) * 0.032;
+  const targetHair = Math.sin(state.motionTime * 1.05) * 0.032 * motionAmplitude(settings);
   state.hairVelocity += ((targetHair - state.hair) * 65 - state.hairVelocity * 9) * dt;
   state.hair += state.hairVelocity * dt;
   if (state.time >= state.nextBlink && state.blinkAge < 0) state.blinkAge = 0;

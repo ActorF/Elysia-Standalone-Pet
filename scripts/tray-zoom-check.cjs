@@ -1,4 +1,4 @@
-/** Browser integration for the tray-only UI and bounded virtual zoom viewport. */
+/** Browser integration for the unobstructed pet canvas and bounded virtual zoom viewport. */
 'use strict';
 const {createServer}=require('node:http');
 const fs=require('node:fs');

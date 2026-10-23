@@ -3,12 +3,12 @@
 const assert=require('node:assert/strict');
 const {restoreBounds,recoverBounds}=require('./host-policy.cjs');
 const {planViewport}=require('./pet-viewport.cjs');
-function checkDesktopWindow({window,pointer,topmost,place,displays,shape,getState}){
+function checkDesktopWindow({window,pointer,topmost,place,displays,shape,getState,updateSettings}){
  const characterBounds=()=>{
   const view=getState().viewport;
   return {x:view.x+view.characterX,y:view.y+view.characterY,width:view.characterWidth,height:view.characterHeight};
  };
- const original=characterBounds(),wasTopmost=topmost.enabled,area=displays[0].bounds;
+ const original=characterBounds(),wasTopmost=topmost.enabled,wasTaskbarInFront=topmost.taskbarInFront,area=displays[0].bounds;
  const center={x:area.x+Math.round(area.width/2),y:area.y+Math.round(area.height/2)};
  const positions={
   top:{x:center.x,y:area.y-original.height+55},
@@ -24,6 +24,18 @@ function checkDesktopWindow({window,pointer,topmost,place,displays,shape,getStat
   topmost.setEnabled(false);assert.equal(window.isAlwaysOnTop(),false);
   topmost.setEnabled(true);assert.equal(window.isAlwaysOnTop(),true);
   topmost.refresh();assert.equal(window.isVisible(),false,'Topmost must not show a hidden window');
+  for(const taskbarInFront of [true,false,true]){
+   updateSettings({alwaysOnTop:true,taskbarInFront});
+   assert.equal(getState().settings.taskbarInFront,taskbarInFront,'Host publishes the taskbar preference');
+   assert.equal(topmost.taskbarInFront,taskbarInFront,'Settings reach the native layer controller');
+   assert.equal(window.isAlwaysOnTop(),true,'Both taskbar modes retain app topmost');
+   topmost.refresh();assert.equal(window.isVisible(),false,'Taskbar toggles must not reveal a hidden pet');
+  }
+  updateSettings({alwaysOnTop:false});
+  assert.equal(window.isAlwaysOnTop(),false);
+  assert.equal(topmost.taskbarInFront,true,'Disabling topmost retains the chosen taskbar order');
+  updateSettings({alwaysOnTop:true});
+  assert.equal(topmost.taskbarInFront,true);
   for(const [id,position]of Object.entries(positions)){
    place(original);
    const start={x:original.x+100,y:original.y+100};
@@ -68,7 +80,7 @@ function checkDesktopWindow({window,pointer,topmost,place,displays,shape,getStat
   const recovered=recoverBounds(characterBounds(),displays);place(recovered);
   const bounds=characterBounds();assert.equal(bounds.x,recovered.x);assert.equal(bounds.y,recovered.y);
   assert.equal(window.isVisible(),false);
-  return {nativeEdgePositions:nativePositions,characterEdgePositions:actual,nativeDragSteps:120,contentSizeRange:sizeRange,mixedDpiSteps,hitRegion:shape.status,shapeStableDuringDrag:true,partialRestore:true,recovery:true,topmostToggle:true,hiddenThroughout:true,syntheticGlobalInput:false};
- }finally{pointer.reset();place(original);topmost.setEnabled(wasTopmost);}
+  return {nativeEdgePositions:nativePositions,characterEdgePositions:actual,nativeDragSteps:120,contentSizeRange:sizeRange,mixedDpiSteps,hitRegion:shape.status,shapeStableDuringDrag:true,partialRestore:true,recovery:true,topmostToggle:true,taskbarPreference:true,hiddenThroughout:true,syntheticGlobalInput:false};
+ }finally{pointer.reset();place(original);updateSettings({alwaysOnTop:wasTopmost,taskbarInFront:wasTaskbarInFront});}
 }
 module.exports={checkDesktopWindow};

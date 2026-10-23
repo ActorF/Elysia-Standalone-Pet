@@ -1,4 +1,6 @@
 /** @fileoverview Joint-weighted character mesh: hair, fabric and legs swing as parts, never as a cursor-driven ripple. */
+import { motionAmplitude, motionTime } from './motion-settings.mjs';
+import { eyeWarpStrength } from './gaze-settings.mjs';
 const W = 1090, H = 1443;
 const IDLE_SWAY_SCALE = .55;
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -83,10 +85,10 @@ function weightsForPoint(x, y) {
 }
 
 /** One slow idle cycle for hair, cloth and legs; the mouse never drives their movement. */
-export function jointPose(time = 0, enabled = true) {
+export function jointPose(time = 0, enabled = true, amplitude = 1) {
   if (!enabled) return new Float32Array(PARTS.length);
   const t = Number.isFinite(time) ? time : 0;
-  const sway = Math.sin(t * .90) * IDLE_SWAY_SCALE;
+  const sway = Math.sin(t * .90) * IDLE_SWAY_SCALE * motionAmplitude({motionAmplitude:amplitude});
   // Share the same phase and direction so upper and lower parts turn together.
   // Retain each part's gentle arc size and the existing attachment geometry.
   // The crown and tuft sit above their pivots, so their rotations are reversed
@@ -97,8 +99,8 @@ export function jointPose(time = 0, enabled = true) {
 }
 
 /** Samples the same weighted transforms as the shader for screen-space motion audits. */
-export function deformPoint(x, y, time = 0, enabled = true, cat = false, pose = 'idle') {
-  const angles = jointPose(time, enabled), weights = weightsForPoint(x, y);
+export function deformPoint(x, y, time = 0, enabled = true, cat = false, pose = 'idle', amplitude = 1) {
+  const angles = jointPose(time, enabled, amplitude), weights = weightsForPoint(x, y);
   let dx = 0, dy = 0;
   PARTS.forEach((part, i) => {
     const qx = x - part.pivot[0], qy = y - part.pivot[1];
@@ -152,12 +154,13 @@ const fragmentSource = `
 precision highp float;
 uniform sampler2D u_image;
 uniform vec2 u_gaze;
+uniform float u_gazeStrength;
 varying vec2 v_uv;
 void main() {
   vec2 p = v_uv*vec2(1090.0,1443.0);
   float l=1.0-smoothstep(0.15,1.0,length((p-vec2(413.0,556.0))/vec2(48.0,61.0)));
   float r=1.0-smoothstep(0.15,1.0,length((p-vec2(647.0,519.0))/vec2(57.0,66.0)));
-  vec2 sampleUV=(p-u_gaze*vec2(7.0,5.0)*(l+r))/vec2(1090.0,1443.0);
+  vec2 sampleUV=(p-u_gaze*vec2(7.0,5.0)*(l+r)*u_gazeStrength)/vec2(1090.0,1443.0);
   gl_FragColor=texture2D(u_image,sampleUV);
 }`;
 
@@ -166,7 +169,7 @@ export function createMeshRig() {
   const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
   const gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: true, preserveDrawingBuffer: true, depth: false });
   let available = false, previousSource = null, previousKey = null;
-  let texture, program, gaze, joints, catUniform, propsUniform, count = 0;
+  let texture, program, gaze, gazeStrength, joints, catUniform, propsUniform, count = 0;
   canvas.addEventListener('webglcontextlost', () => { available = false; });
   try {
     if (!gl) throw new Error('WebGL unavailable');
@@ -203,7 +206,8 @@ export function createMeshRig() {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.uniform1i(gl.getUniformLocation(program,'u_image'), 0);
     catUniform=gl.getUniformLocation(program,'u_cat');propsUniform=gl.getUniformLocation(program,'u_props');
-    gaze = gl.getUniformLocation(program,'u_gaze'); joints = gl.getUniformLocation(program,'u_joints[0]');
+    gaze = gl.getUniformLocation(program,'u_gaze'); gazeStrength = gl.getUniformLocation(program,'u_gazeStrength');
+    joints = gl.getUniformLocation(program,'u_joints[0]');
     gl.viewport(0,0,W,H); gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST); gl.clearColor(0,0,0,0);
     available = true;
   } catch (error) { console.warn('Animation mesh unavailable:', error.message); }
@@ -214,7 +218,7 @@ export function createMeshRig() {
     /** Deforms a cached expression drawing. Texture upload happens only when the expression image changes. */
     draw(source, key, state, settings, allowGaze = true) {
       if (!available || gl.isContextLost()) { available = false; return source; }
-      const angles = jointPose(state.time, settings.hairMotion !== false);
+      const angles = jointPose(motionTime(state, settings), settings.hairMotion !== false, motionAmplitude(settings));
       const values = new Float32Array(PARTS.length * 3);
       PARTS.forEach((part, i) => values.set([...part.pivot, angles[i]], i * 3));
       if (previousSource !== source || previousKey !== key) {
@@ -223,6 +227,7 @@ export function createMeshRig() {
       }
       const track = allowGaze && settings.eyeTracking !== false;
       gl.uniform2f(gaze, track ? clamp(state.gaze.x,-1,1) : 0, track ? clamp(state.gaze.y,-1,1) : 0);
+      gl.uniform1f(gazeStrength, eyeWarpStrength(settings));
       gl.uniform1f(catUniform,state.cat?1:0);
       const pose=state.pose??(state.megaphone?'megaphone':'idle');
       gl.uniform3f(propsUniform,pose==='megaphone'?1:0,pose==='tea'?1:0,pose==='cake'?1:0);
@@ -238,8 +243,9 @@ export const MESH_GRID = Object.freeze({width: W, height: H, columns: 66, rows: 
 const MAX_JOINT_ANGLES = [.006,.047,.046,.044,.034,.05,.052,.05,.0655,.07,.105,.035];
 
 /** Conservative [minDx,minDy,maxDx,maxDy] over every joint phase at a vertex. */
-export function meshPointMotionBounds(x, y, enabled = true, cat = false, pose = 'idle') {
-  if (!enabled) return [0, 0, 0, 0];
+export function meshPointMotionBounds(x, y, enabled = true, cat = false, pose = 'idle', amplitude = 1) {
+  const scale = IDLE_SWAY_SCALE * motionAmplitude({motionAmplitude:amplitude});
+  if (!enabled || !scale) return [0, 0, 0, 0];
   const weights = weightsForPoint(x, y);
   const prop = ['megaphone','tea','cake'].indexOf(pose);
   const attachment = (cat ? Math.max(0, 2 * catAnchor(x, y) - 1) : 1)
@@ -250,7 +256,8 @@ export function meshPointMotionBounds(x, y, enabled = true, cat = false, pose = 
     if (!weight) continue;
     const qx = x - PARTS[i].pivot[0], qy = y - PARTS[i].pivot[1];
     // Uniform angles are Float32: round the maxima outward before bounding.
-    const a = Math.max(MAX_JOINT_ANGLES[i], Math.fround(MAX_JOINT_ANGLES[i]));
+    const maxAngle = MAX_JOINT_ANGLES[i] * scale;
+    const a = Math.max(maxAngle, Math.fround(maxAngle));
     for (let axis = 0; axis < 2; axis++) {
       const value = angle => axis === 0
         ? (Math.cos(angle) - 1) * qx - Math.sin(angle) * qy

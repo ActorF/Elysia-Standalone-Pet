@@ -20,6 +20,7 @@ class FakeWindow extends EventEmitter {
 }
 function fixture(windowOptions = {}, options = {}) {
   const window = new FakeWindow(windowOptions), timers = new Set(), scheduled = [];
+  if (options.createTaskbarOrderer) window.getNativeWindowHandle = () => Buffer.alloc(8);
   const controller = createTopmostController(window, { ...options,
     setInterval(fn, ms) { const timer = { fn, ms, unreferenced: false, unref() { this.unreferenced = true; } }; timers.add(timer); scheduled.push(timer); return timer; },
     clearInterval(timer) { timers.delete(timer); },
@@ -130,5 +131,122 @@ test('native failures are reported without creating a busy retry loop', () => {
   f.window.moveTop = () => { throw new Error('Native reorder failed'); };
   assert.equal(f.controller.refresh(), false);
   assert.deepEqual(errors, ['Native reorder failed']); assert.equal(f.timers.size, 1); assert.equal(f.scheduled.length, 1);
+  f.controller.dispose();
+});
+
+test('taskbar-front mode stays topmost without raising above the taskbar on a timer or focus event', () => {
+  const f = fixture({}, { taskbarInFront: true });
+  assert.equal(f.controller.taskbarInFront, true);
+  assert.deepEqual(f.window.calls, [['topmost', true, 'floating']]);
+  f.window.calls.length = 0;
+  f.tick();
+  for (const event of ['focus', 'blur', 'show', 'restore', 'leave-full-screen']) f.window.emit(event);
+  assert.equal(f.window.calls.length, 6);
+  assert.ok(f.window.calls.every(call => JSON.stringify(call) === JSON.stringify(['topmost', true, 'floating'])));
+  assert.equal(f.window.topmost, true);
+  assert.equal(f.timers.size, 1);
+  f.controller.dispose();
+});
+
+test('switching taskbar order applies immediately and stale ticks use the latest preference', () => {
+  const f = fixture(), tick = f.scheduled[0].fn;
+  f.window.calls.length = 0;
+  f.controller.setTaskbarInFront(true);
+  assert.deepEqual(f.window.calls, [['topmost', true, 'floating']]);
+  f.window.calls.length = 0;
+  tick();
+  assert.deepEqual(f.window.calls, [['topmost', true, 'floating']]);
+  f.window.calls.length = 0;
+  f.controller.setTaskbarInFront(false);
+  assert.deepEqual(f.window.calls, [['topmost', true, 'screen-saver'], ['raise']]);
+  f.window.calls.length = 0;
+  f.controller.setTaskbarInFront(false);
+  assert.deepEqual(f.window.calls, []);
+  assert.equal(f.timers.size, 1);
+  f.controller.dispose();
+});
+
+test('taskbar preference survives disabled and hidden states without showing or enabling the pet', () => {
+  const f = fixture({ visible: false }, { enabled: false });
+  f.window.calls.length = 0;
+  f.controller.setTaskbarInFront(true);
+  assert.deepEqual(f.window.calls, []);
+  assert.equal(f.controller.enabled, false);
+  f.controller.setEnabled(true);
+  assert.deepEqual(f.window.calls, [['topmost', true, 'floating']]);
+  assert.equal(f.window.visible, false);
+  assert.equal(f.timers.size, 0);
+  f.controller.setEnabled(false);
+  f.window.calls.length = 0;
+  f.controller.setEnabled(true);
+  assert.deepEqual(f.window.calls, [['topmost', true, 'floating']]);
+  f.controller.dispose();
+  f.window.calls.length = 0;
+  f.controller.setTaskbarInFront(false);
+  f.controller.setEnabled(true);
+  f.controller.refresh();
+  assert.deepEqual(f.window.calls, []);
+});
+
+function nativeFixture(windowOptions = {}, options = {}) {
+  const backend = { ready: false, starts: 0, stops: 0, disposals: 0,
+    start() { this.starts++; },
+    stop() { this.stops++; this.ready = false; },
+    dispose() { this.disposals++; this.ready = false; },
+    get running() { return this.ready; },
+  };
+  let callbacks;
+  const f = fixture(windowOptions, { taskbarInFront: true, platform: 'win32', ...options,
+    createTaskbarOrderer(window, settings) { callbacks = settings; return backend; },
+  });
+  return { ...f, backend, stopped() { callbacks.onStopped(); } };
+}
+
+test('ready native ordering is not undone by Electron floating reassertions', () => {
+  const f = nativeFixture();
+  assert.equal(f.backend.starts, 1);
+  assert.deepEqual(f.window.calls, [['topmost', true, 'floating']]);
+  f.backend.ready = true; f.window.calls.length = 0;
+  f.tick();
+  for (const event of ['focus', 'blur', 'show', 'restore']) f.window.emit(event);
+  assert.deepEqual(f.window.calls, [], 'Floating only handles the primary taskbar and must not override the helper');
+  assert.equal(f.window.topmost, true);
+  f.controller.setTaskbarInFront(false);
+  assert.equal(f.backend.ready, false);
+  assert.deepEqual(f.window.calls, [['topmost', true, 'screen-saver'], ['raise']]);
+  f.controller.dispose();
+});
+
+test('late native helper exit reapplies the latest enabled policy without resurrecting a disposed window', () => {
+  const f = nativeFixture(); f.backend.ready = true;
+  f.controller.setTaskbarInFront(false); f.window.calls.length = 0;
+  f.stopped();
+  assert.deepEqual(f.window.calls, [['topmost', true, 'screen-saver'], ['raise']]);
+  f.controller.setTaskbarInFront(true); f.backend.ready = true;
+  f.controller.setEnabled(false); f.window.calls.length = 0;
+  f.stopped();
+  assert.deepEqual(f.window.calls, [['topmost', false]]);
+  assert.equal(f.timers.size, 0); assert.equal(f.backend.ready, false);
+  f.controller.dispose(); f.window.calls.length = 0;
+  f.stopped();
+  assert.deepEqual(f.window.calls, []); assert.equal(f.backend.disposals, 1);
+});
+
+test('hidden and minimized windows stop the helper and restart ordering only on restore', () => {
+  const f = nativeFixture({ visible: false });
+  assert.equal(f.backend.starts, 0);
+  f.window.visible = true; f.window.emit('show'); f.backend.ready = true;
+  assert.equal(f.backend.starts, 1);
+  f.window.minimized = true; f.window.emit('minimize');
+  assert.equal(f.backend.ready, false); assert.equal(f.timers.size, 0);
+  f.window.calls.length = 0; f.stopped();
+  assert.ok(f.window.calls.every(call => call[0] === 'topmost'));
+  assert.equal(f.backend.starts, 1);
+  f.window.minimized = false; f.window.emit('restore');
+  assert.equal(f.backend.starts, 2);
+  f.window.visible = false; f.window.emit('hide');
+  f.window.calls.length = 0; f.stopped();
+  assert.ok(f.window.calls.every(call => call[0] === 'topmost'));
+  assert.equal(f.backend.starts, 2); assert.equal(f.window.visible, false);
   f.controller.dispose();
 });

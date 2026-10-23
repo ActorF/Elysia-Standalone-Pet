@@ -4,8 +4,8 @@
 const path = require('node:path');
 const { fileURLToPath } = require('node:url');
 const DEFAULT_SETTINGS = Object.freeze({
-  alwaysOnTop: true, clickThrough: false, scale: 1, legacyHotkeys: true, alternateHotkeys: false,
-  eyeTracking: true, hairMotion: true, keyDisplay: true, cat: false, glasses: false,
+  alwaysOnTop: true, taskbarInFront: false, clickThrough: false, scale: 1, legacyHotkeys: true, alternateHotkeys: false,
+  eyeTracking: true, eyeWarpStrength: 1, hairMotion: true, motionAmplitude: 1, motionSpeed: 1, keyDisplay: true, cat: false, glasses: false,
 });
 const EXPRESSION_KEYS = Object.freeze({
   '1': 'blush', '2': 'angry', '3': 'sleep', '4': 'surprise', '5': 'dizzy',
@@ -23,13 +23,20 @@ function sanitizeAppearance(input = {}) {
 }
 
 function sanitizeSettings(input = {}, previous = DEFAULT_SETTINGS) {
-  const next = { ...previous };
-  for (const key of ['alwaysOnTop', 'clickThrough', 'legacyHotkeys', 'alternateHotkeys', 'eyeTracking', 'hairMotion', 'keyDisplay', 'cat', 'glasses']) {
+  const next = { ...DEFAULT_SETTINGS, ...previous };
+  for (const key of ['alwaysOnTop', 'taskbarInFront', 'clickThrough', 'legacyHotkeys', 'alternateHotkeys', 'eyeTracking', 'hairMotion', 'keyDisplay', 'cat', 'glasses']) {
     if (typeof input[key] === 'boolean') next[key] = input[key];
   }
   // Keep sub-percent wheel increments. The only upper boundary is finite
   // arithmetic for virtual geometry; it is not a user-facing zoom limit.
   if (Number.isFinite(input.scale)) next.scale = Math.min(Number.MAX_VALUE / 2 ** 20, Math.max(0.01, input.scale));
+  for (const [key, minimum, maximum] of [['eyeWarpStrength', 0, 2], ['motionAmplitude', 0, 2], ['motionSpeed', 0.25, 3]]) {
+    // Missing fields in older settings preserve the original effects. Invalid patches
+    // keep the previous valid choice without coercing strings or other values.
+    const value = Number.isFinite(input[key]) ? input[key]
+      : Number.isFinite(next[key]) ? next[key] : DEFAULT_SETTINGS[key];
+    next[key] = Math.min(maximum, Math.max(minimum, value));
+  }
   return next;
 }
 
