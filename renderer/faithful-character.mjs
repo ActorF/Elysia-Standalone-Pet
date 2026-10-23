@@ -1,5 +1,6 @@
 /** Independent face, action and skin composition; continuous motion runs after composition. */
 import { createMeshRig } from './mesh-rig.mjs';
+import { motionAmplitude, motionTime } from './motion-settings.mjs';
 import { harmonizePoseOutfit } from './outfit-palette.mjs';
 import { ellipse, path } from './drawing-primitives.mjs';
 const INK = '#4a203d', W = 1090, H = 1443;
@@ -175,7 +176,7 @@ export function drawCharacter(ctx,rigs,state,settings={}) {
   ctx.save();ctx.translate(RIG.x,RIG.y);ctx.scale(RIG.scale,RIG.scale);
   ctx.drawImage(frame,0,0,W,H);ctx.restore();
   // Decorations live in their own screen plane, outside the character rig.
-  const drift=settings.hairMotion===false?0:Math.sin(state.time*.8)*2;
+  const drift=Math.sin(motionTime(state,settings)*.8)*2*motionAmplitude(settings);
   if(expression==='sleep') {
     ctx.drawImage(rigs.images.sleepDecoration,427,8+drift,170,170);
     ctx.save();ctx.lineJoin='round';ctx.strokeStyle='#fff4f8';ctx.fillStyle='#663650';ctx.lineWidth=4;

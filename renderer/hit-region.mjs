@@ -3,6 +3,7 @@ import {RIG,composeCharacterFrame} from './faithful-character.mjs';
 import {EXPRESSIONS} from './state.mjs';
 import {meshAlphaToOccupancy} from './mesh-envelope.mjs';
 import {drawKeyCloud,KEY_EFFECT_BOUNDS} from './key-cloud.mjs';
+import {motionAmplitude} from './motion-settings.mjs';
 
 const WIDTH=600,HEIGHT=800,CELL_SIZE=4;
 const regions=new WeakMap();
@@ -94,9 +95,11 @@ function sourceAlpha(atlas,pose,cat){
  return alpha;
 }
 
-function drawDecorations(ctx,images,decoration,enabled){
+function drawDecorations(ctx,images,decoration,amplitude){
  if(!decoration)return;
- for(const drift of enabled?[-2,-1,0,1,2]:[0]){
+ const steps=Math.ceil(4*amplitude);
+ for(let step=0;step<=steps;step++){
+  const drift=steps?2*amplitude*(2*step/steps-1):0;
   if(decoration==='dizzy'){ctx.drawImage(images.dizzyDecoration,57,6+drift,486,162);continue;}
   ctx.drawImage(images.sleepDecoration,427,8+drift,170,170);
   ctx.save();ctx.lineJoin='round';ctx.strokeStyle='#fff4f8';ctx.fillStyle='#663650';ctx.lineWidth=4;
@@ -114,9 +117,9 @@ function drawDecorations(ctx,images,decoration,enabled){
  */
 export function createCharacterHitRegion(atlas,state={},settings={}){
  let cache=regions.get(atlas);if(!cache){cache={results:new Map(),sources:new Map(),bodies:new Map(),decorations:new Map()};regions.set(atlas,cache);}
- const enabled=settings.hairMotion!==false,pose=state.pose??'idle';
+ const amplitude=motionAmplitude(settings),enabled=amplitude>0,pose=state.pose??'idle';
  const decoration=['sleep','dizzy'].includes(state.expression)?state.expression:'';
- const bodyKey=`${pose}:${!!state.cat}:${enabled}`,key=`${bodyKey}:${decoration}`;
+ const bodyKey=`${pose}:${!!state.cat}:${amplitude}`,key=`${bodyKey}:${decoration}`;
  if(cache.results.has(key))return cache.results.get(key);
  const start=performance.now();
  const readMask=draw=>{
@@ -131,14 +134,14 @@ export function createCharacterHitRegion(atlas,state={},settings={}){
   let alpha=cache.sources.get(sourceKey);
   if(!alpha){alpha=sourceAlpha(atlas,pose,!!state.cat);cache.sources.set(sourceKey,alpha);}
   body=meshAlphaToOccupancy(alpha,{width:WIDTH,height:HEIGHT,cellSize:CELL_SIZE,padding:1,
-   x:RIG.x,y:RIG.y,scale:RIG.scale,enabled,cat:!!state.cat,pose});
+   x:RIG.x,y:RIG.y,scale:RIG.scale,enabled,cat:!!state.cat,pose,motionAmplitude:amplitude});
   cache.bodies.set(bodyKey,body);
  }
  let mask=body;
  if(decoration){
-  const decorKey=`${decoration}:${enabled}`;
+  const decorKey=`${decoration}:${amplitude}`;
   let decor=cache.decorations.get(decorKey);
-  if(!decor){decor=readMask(ctx=>drawDecorations(ctx,atlas.images,decoration,enabled));cache.decorations.set(decorKey,decor);}
+  if(!decor){decor=readMask(ctx=>drawDecorations(ctx,atlas.images,decoration,amplitude));cache.decorations.set(decorKey,decor);}
   const cells=body.cells.slice();for(let i=0;i<cells.length;i++)cells[i]|=decor.cells[i];
   mask={...body,cells};
  }

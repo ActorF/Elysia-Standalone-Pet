@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'">
+  <title>设置</title>
+  <link rel="stylesheet" href="./settings.css">
+</head>
+<body>
+  <header class="page-header">
+    <h1>设置</h1>
+    <span id="save-status" role="status">自动保存</span>
+    <div class="window-controls" aria-label="窗口操作">
+      <button type="button" data-window-control="minimize" aria-label="最小化" title="最小化">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" /></svg>
+      </button>
+      <button type="button" data-window-control="toggle-maximize" aria-label="最大化" title="最大化" data-maximized="false">
+        <svg class="maximize-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="1" /></svg>
+        <svg class="restore-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3h8v8M3 5h8v8H3z" /></svg>
+      </button>
+      <button type="button" data-window-control="close" aria-label="关闭" title="关闭">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 3 10 10M13 3 3 13" /></svg>
+      </button>
+    </div>
+  </header>
+  <nav class="tabs" role="tablist" aria-label="设置分类">
+    <button id="tab-appearance" role="tab" aria-selected="true" aria-controls="panel-appearance" data-tab="appearance">外观</button>
+    <button id="tab-animation" role="tab" aria-selected="false" aria-controls="panel-animation" tabindex="-1" data-tab="animation">动画</button>
+    <button id="tab-desktop" role="tab" aria-selected="false" aria-controls="panel-desktop" tabindex="-1" data-tab="desktop">桌面</button>
+  </nav>
+  <main>
+    <p id="error-message" role="alert" hidden></p>
+    <section id="panel-appearance" role="tabpanel" aria-labelledby="tab-appearance">
+      <div class="section-heading"><h2>表情</h2><button id="neutral-face" class="text-button" data-action="neutral">默认表情</button></div>
+      <p class="section-hint">空格 + 数字切换，再按一次恢复默认。</p>
+      <div id="expressions" class="expression-grid" role="group" aria-label="表情"></div>
+      <div class="section-heading spaced"><h2>装扮</h2><span class="hint">可以同时开启</span></div>
+      <div id="skins" class="skin-grid"></div>
+      <div class="section-heading spaced"><h2>动作</h2><span class="hint">四选一</span></div>
+      <div id="poses" class="pose-grid" role="group" aria-label="动作"></div>
+      <p class="section-hint after">切换表情时，当前动作和装扮会保留。</p>
+      <button class="secondary-button reset-appearance" data-action="reset">重置表情、装扮和动作</button>
+    </section>
+    <section id="panel-animation" role="tabpanel" aria-labelledby="tab-animation" hidden>
+      <div class="card">
+        <div id="eye-toggle"></div>
+        <div id="eye-range" class="inset-control"></div>
+      </div>
+      <div class="card">
+        <div id="motion-toggle"></div>
+        <div id="amplitude-range" class="inset-control"></div>
+        <div id="speed-range" class="inset-control"></div>
+      </div>
+      <div class="card" id="key-toggle"></div>
+    </section>
+    <section id="panel-desktop" role="tabpanel" aria-labelledby="tab-desktop" hidden>
+      <div class="card size-card">
+        <div class="section-heading"><h2>桌宠大小</h2><span class="hint">支持 1% 和更大的尺寸</span></div>
+        <form id="size-form" class="size-form">
+          <label class="number-field size-number"><input id="scale-percent" name="scalePercent" type="number" min="1" step="any" inputmode="decimal" aria-label="桌宠大小百分比"><span>%</span></label>
+          <button type="submit" class="primary-button">应用</button>
+          <button type="button" class="secondary-button" data-resize-factor="0.9090909090909091">缩小</button>
+          <button type="button" class="secondary-button" data-resize-factor="1.1">放大</button>
+        </form>
+        <div class="size-presets" aria-label="大小预设">
+          <button data-scale=".01">1%</button><button data-scale=".5">50%</button><button data-scale="1">100%</button><button data-scale="2">200%</button><button data-scale="5">500%</button>
+        </div>
+        <p class="hint">也可以按住人物上的鼠标右键，再滚动滚轮。</p>
+      </div>
+      <div class="card">
+        <div id="topmost-toggle"></div>
+        <fieldset id="taskbar-fieldset" class="taskbar-setting"><legend>任务栏层级</legend><div class="segmented">
+          <label><input type="radio" name="taskbarInFront" value="true"><span>任务栏在前</span></label>
+          <label><input type="radio" name="taskbarInFront" value="false"><span>桌宠在前</span></label>
+        </div><p id="taskbar-hint" class="hint">决定人物与任务栏重叠时的前后顺序。</p></fieldset>
+        <div id="passthrough-toggle" class="divided"></div>
+      </div>
+      <div class="card"><div id="legacy-toggle"></div><div id="alternate-toggle" class="divided"></div></div>
+    </section>
+  </main>
+  <footer>
+    <span class="footer-hint">关闭此窗口，桌宠会继续运行。</span>
+    <div class="recovery-actions"><button class="secondary-button" data-recover="false">找回桌宠</button><button class="text-button" data-recover="true">恢复大小并找回</button></div>
+  </footer>
+  <script type="module" src="./settings.mjs"></script>
+</body>
+</html>

@@ -6,7 +6,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { spawn } = require('node:child_process');
 const { DEFAULT_SETTINGS, EXPRESSION_KEYS, SKIN_KEYS, POSE_KEYS, sanitizeAppearance, sanitizeSettings, freeBounds, restoreBounds, recoverBounds, actionForKey, isLocalResource } = require('./host-policy.cjs');
-const { trayPng } = require('./tray-icon.cjs');
+const { trayPng, createTrayImage } = require('./tray-icon.cjs');
 const {createDesktopPointer,POINTER_INTERVAL_MS,DRAG_INTERVAL_MS}=require('./desktop-pointer.cjs');
 const {createDragLifecycle}=require('./drag-lifecycle.cjs');
 const {createTopmostController}=require('./window-layer.cjs');
@@ -15,16 +15,20 @@ const {virtualBounds,planViewport,viewportSnapshot,zoomAt,zoomFromSteps,sanitize
 const {trayTemplate}=require('./tray-menu.cjs');
 const {createViewportChannel}=require('./viewport-channel.cjs');
 const {createTypedKeyListener}=require('./typed-key-listener.cjs');
+const {createSettingsWindow}=require('./settings-window.cjs');
+const {settingsAction,isSettingsSender}=require('./settings-policy.cjs');
 
 const root = path.resolve(__dirname, '..');
 const rendererUrl = pathToFileURL(path.join(root, 'renderer', 'index.html')).href;
 const smokeNativeHotkeys = process.argv.includes('--smoke-native-hotkeys');
 const isSmokeTest = process.argv.includes('--smoke-test') || smokeNativeHotkeys;
-// Keep the existing preferences and single-instance identity after a display-name change.
+// Keep production preferences across upgrades; smoke tests use an isolated profile.
+app.setName('爱莉希雅桌宠');
+app.setAppUserModelId('io.actorf.elysia.standalonepet');
 app.setPath('userData', isSmokeTest
   ? path.join(app.getPath('temp'), 'elysia-pet-host-smoke')
   : path.join(app.getPath('appData'), 'Elysia Desktop Pet'));
-let pet, tray, settingsFile, pointerTimer, saveTimer, desktopPointer, dragLifecycle, topmost, windowShape, legacyProcess, typingListener;
+let pet, tray, settingsWindow, settingsFile, pointerTimer, saveTimer, desktopPointer, dragLifecycle, topmost, windowShape, legacyProcess, typingListener;
 let preferences = { ...DEFAULT_SETTINGS };
 let appearance = sanitizeAppearance();
 let savedPosition = null;
@@ -34,11 +38,11 @@ const viewportChannel=createViewportChannel(payload=>send('pet:viewport',payload
 let quitting = false;
 const hotkeys = { legacy: { active: false, error: null }, alternate: { active: false, failed: [] }, typing: { active: false, error: null }, recovery: false };
 
-function state() { return { settings: { ...preferences }, hotkeys: structuredClone(hotkeys), viewport:viewport?{...viewport}:null }; }
+function state() { return { settings: { ...preferences }, appearance: { ...appearance }, hotkeys: structuredClone(hotkeys), viewport:viewport?{...viewport}:null }; }
 function send(channel, data) {
   if (pet && !pet.isDestroyed() && !pet.webContents.isDestroyed()) pet.webContents.send(channel, data);
 }
-function publishSettings() { send('pet:settings', state()); }
+function publishSettings() { const snapshot=state();send('pet:settings',snapshot);settingsWindow?.publish(snapshot); }
 function action(typeOrAction) { send('pet:action', typeof typeOrAction === 'string' ? { type: typeOrAction } : typeOrAction); }
 function pollPointer(dragging=false) {
   clearInterval(pointerTimer);
@@ -97,13 +101,14 @@ function recover(resetScale = false) {
   dragLifecycle?.cancelDrag();
   if (pet.isMinimized()) pet.restore();
   placePet(recoverBounds(characterBounds??pet.getBounds(), screen.getAllDisplays(),bounds=>bounds));
-  pet.show();
-  pet.focus();
+  if (!isSmokeTest) { pet.show(); pet.focus(); }
 }
 function updateSettings(patch, anchor) {
   const previous = preferences;
   preferences = sanitizeSettings(patch && typeof patch === 'object' ? patch : {}, preferences);
   if (pet && !pet.isDestroyed()) {
+    // Store the chosen taskbar order before enabling topmost, including reloads.
+    topmost?.setTaskbarInFront(preferences.taskbarInFront);
     topmost?.setEnabled(preferences.alwaysOnTop);
     if (preferences.clickThrough) dragLifecycle?.endDrag();
     pet.setIgnoreMouseEvents(preferences.clickThrough, { forward: true });
@@ -219,7 +224,7 @@ function configureAlternateHotkeys() {
 }
 
 function buildMenu() {
-  return Menu.buildFromTemplate(trayTemplate({settings:preferences,appearance,action,updateSettings,recover,resize:resizePet,quit:()=>app.quit()}));
+  return Menu.buildFromTemplate(trayTemplate({openSettings:()=>settingsWindow.open().catch(error=>console.error('Could not open settings:',error)),quit:()=>app.quit()}));
 }
 
 function registerIpc() {
@@ -236,7 +241,9 @@ function registerIpc() {
     }
     logicalHitRegion=null;return windowShape?.update(region)??false;
   });
-  ipcMain.on('pet:set-appearance', (event, value) => { if (trusted(event)) appearance = sanitizeAppearance(value); });
+  ipcMain.on('pet:set-appearance', (event, value) => {
+    if (trusted(event)) { appearance = sanitizeAppearance(value);settingsWindow?.publish(state()); }
+  });
   ipcMain.on('pet:pointer-received', (event, sequence) => { if (trusted(event) && Number.isSafeInteger(sequence)) desktopPointer?.acknowledge(sequence); });
   ipcMain.on('pet:viewport-received',(event,sequence)=>{
     if(trusted(event)&&Number.isSafeInteger(sequence))viewportChannel.acknowledge(sequence);
@@ -244,6 +251,25 @@ function registerIpc() {
   ipcMain.on('pet:drag-start', (event) => { if (trusted(event) && (preferences.clickThrough||!dragLifecycle?.startDrag())) send('pet:drag-state',false); });
   ipcMain.on('pet:drag-end', (event) => { if (trusted(event)) dragLifecycle?.endDrag(); });
   ipcMain.on('pet:quit', (event) => { if (trusted(event)) app.quit(); });
+  const trustedSettings = event => isSettingsSender(event, settingsWindow?.getWindow(), settingsWindow?.url);
+  ipcMain.on('settings:window-control', (event, value) => {
+    if (trustedSettings(event)) settingsWindow.windowControl(value);
+  });
+  ipcMain.handle('settings:get-state', event => trustedSettings(event) ? state() : null);
+  ipcMain.handle('settings:get-window-state', event => trustedSettings(event) ? settingsWindow.getWindowState() : null);
+  ipcMain.handle('settings:set-settings', (event, patch) => trustedSettings(event) ? updateSettings(patch) : null);
+  ipcMain.handle('settings:action', (event, value) => {
+    const next = settingsAction(value);
+    if (!trustedSettings(event) || !next || !pet || pet.isDestroyed()) return false;
+    action(next);
+    return true;
+  });
+  ipcMain.handle('settings:resize', (event, scale) => trustedSettings(event) && Number.isFinite(scale) ? resizePet(scale) : null);
+  ipcMain.handle('settings:recover', (event, resetScale) => {
+    if (!trustedSettings(event) || typeof resetScale !== 'boolean') return null;
+    recover(resetScale);
+    return state();
+  });
 }
 
 async function createWindow() {
@@ -257,10 +283,11 @@ async function createWindow() {
     show: false, frame: false, thickFrame: false, transparent: true, backgroundColor: '#00000000',
     resizable: false, maximizable: false, fullscreenable: false,
     alwaysOnTop: preferences.alwaysOnTop, skipTaskbar: true, hasShadow: false,
-    title: '爱莉希雅桌宠 / Elysia_desktop_pet', icon: nativeImage.createFromBuffer(trayPng()),
+    title: '爱莉希雅桌宠', icon: nativeImage.createFromBuffer(trayPng()),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true, backgroundThrottling: false, devTools: !app.isPackaged },
   });
-  topmost=createTopmostController(pet,{enabled:preferences.alwaysOnTop});
+  topmost=createTopmostController(pet,{enabled:preferences.alwaysOnTop,taskbarInFront:preferences.taskbarInFront,
+    onError:error=>console.error('Could not update pet window layer:',error.message)});
   windowShape=createWindowShape(pet,{screen});
   viewport=viewportSnapshot(characterBounds,pet.getContentBounds(),planned.clipped);
   desktopPointer=createDesktopPointer({
@@ -277,10 +304,11 @@ async function createWindow() {
   dragLifecycle=createDragLifecycle({window:pet,pointer:desktopPointer,readCursor:()=>screen.getCursorScreenPoint()});
   pet.webContents.on('did-finish-load',()=>{desktopPointer?.reset();viewportChannel.reset();});
   pet.setMenu(null);
+  pet.on('page-title-updated', event => event.preventDefault());
   pet.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   pet.webContents.on('will-navigate', (event, url) => { if (url !== rendererUrl) event.preventDefault(); });
   pet.webContents.on('will-attach-webview', (event) => event.preventDefault());
-  // Settings live exclusively in the native tray menu. Right-button input on
+  // The tray opens a separate settings window. Right-button input on
   // the character belongs to the wheel-resize gesture in the renderer.
   pet.on('move', () => { if(!desktopPointer?.dragging)saveSettings(); });
   pet.on('resize', () => windowShape?.refresh());
@@ -317,8 +345,9 @@ async function createWindow() {
     if (renderer.rendering?.mode !== 'mesh') {
       throw new Error('Desktop character mesh rendering smoke check failed');
     }
-    const desktopChecks=smokeNativeHotkeys?null:require('./desktop-smoke.cjs').checkDesktopWindow({window:pet,getState:state,pointer:desktopPointer,topmost,place:placePet,displays:screen.getAllDisplays(),shape:windowShape});
+    const desktopChecks=smokeNativeHotkeys?null:require('./desktop-smoke.cjs').checkDesktopWindow({window:pet,getState:state,pointer:desktopPointer,topmost,place:placePet,displays:screen.getAllDisplays(),shape:windowShape,updateSettings});
     if(desktopChecks)desktopChecks.zoom=await require('./zoom-smoke.cjs').checkDesktopZoom({window:pet,getState:state,resize:resizePet,place:placePet,pointer:desktopPointer,shape:windowShape});
+    if(desktopChecks)desktopChecks.settingsWindow=await require('./settings-window-smoke.cjs').checkSettingsWindow({window:pet,getState:state,settingsFile,buildMenu,settingsWindow,updateSettings,action,ipcMain});
     console.log(JSON.stringify({ smoke: 'ok', nativeSpaceChord: smokeNativeHotkeys ? 'passed-on-own-foreground-window' : 'not-requested', renderer, desktopChecks, bounds: pet.getBounds(), security: { sandbox: webPreferences.sandbox, contextIsolation: webPreferences.contextIsolation, nodeIntegration: webPreferences.nodeIntegration } }));
     app.quit();
   }
@@ -330,13 +359,14 @@ else {
   app.whenReady().then(async () => {
     settingsFile = path.join(app.getPath('userData'), 'settings.json');
     loadSettings();
+    settingsWindow=createSettingsWindow({BrowserWindow,screen,root,isSmokeTest,isPackaged:app.isPackaged,getState:state});
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
     session.defaultSession.setPermissionCheckHandler(() => false);
     session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
       callback({ cancel: !isLocalResource(details.url, root) && !details.url.startsWith('data:') && !details.url.startsWith('blob:') });
     });
     registerIpc();
-    tray = new Tray(nativeImage.createFromBuffer(trayPng()));
+    tray = new Tray(createTrayImage(nativeImage));
     tray.setToolTip('爱莉希雅桌宠 · Ctrl+Alt+P 恢复操作');
     tray.on('click', () => tray.popUpContextMenu(buildMenu()));
     tray.on('right-click', () => tray.popUpContextMenu(buildMenu()));
@@ -352,6 +382,7 @@ else {
 }
 app.on('before-quit', () => {
   quitting = true;
+  settingsWindow?.dispose();
   clearInterval(pointerTimer);
   dragLifecycle?.dispose();
   windowShape?.dispose();

@@ -1,7 +1,7 @@
 {
   "name": "elysia_desktop_pet",
   "productName": "爱莉希雅桌宠",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "独立爱莉希雅桌面伙伴",
   "author": "ActorF",
@@ -17,7 +17,8 @@
     "test:faces": "node scripts/face-integrity-check.cjs",
     "preview:expressions": "node scripts/gallery-preview.cjs",
     "preview:motion": "node scripts/gallery-preview.cjs --motion",
-    "test:zoom": "node scripts/tray-zoom-check.cjs"
+    "test:zoom": "node scripts/tray-zoom-check.cjs",
+    "test:settings": "node scripts/settings-window-check.cjs"
   },
   "devDependencies": {
     "electron": "43.8.0",
@@ -35,13 +36,15 @@
       "electron/**/*",
       "renderer/**/*",
       "assets/character/*.png",
+      "assets/ui/tray-icon.png",
       "package.json",
       "LICENSE",
       "ASSET-NOTICE.md"
     ],
     "asarUnpack": [
       "electron/legacy-hotkeys.ps1",
-      "electron/typed-keys.ps1"
+      "electron/typed-keys.ps1",
+      "electron/taskbar-order.ps1"
     ],
     "win": {
       "target": "portable",

@@ -8,11 +8,13 @@
 
 ## 下载程序
 
-**[下载 Windows 便携版 · 1.1.0](https://github.com/ActorF/Elysia_desktop_pet/releases/download/v1.1.0/Elysia_desktop_pet-1.1.0.exe)**
+**[下载 Windows 便携版 · 已发布版本 1.1.0](https://github.com/ActorF/Elysia_desktop_pet/releases/download/v1.1.0/Elysia_desktop_pet-1.1.0.exe)**
 
 [更新说明](https://github.com/ActorF/Elysia_desktop_pet/releases/tag/v1.1.0) · [SHA256 校验文件](https://github.com/ActorF/Elysia_desktop_pet/releases/download/v1.1.0/Elysia_desktop_pet-1.1.0.exe.sha256)
 
-下载后双击 EXE 即可运行，无需安装 Node.js。所有设置都在右下角系统托盘的爱莉希雅图标中。升级前先从托盘退出旧版，已有设置会保留。
+**当前 `version-control` 分支为 1.2.0 预览版，等待审核合并。** 1.2.0 尚未发布 EXE，上方下载仍是 1.1.0。新版的独立设置窗口和动画调节可通过[源码运行](#源码运行)体验，改动见 [1.2.0 更新说明](docs/releases/v1.2.0.md)。
+
+下载后双击 EXE 即可运行，无需安装 Node.js。升级前先从右下角托盘退出旧版；1.2.0 会保留已有的位置、大小、装扮开关和偏好，无需手动迁移。
 
 <details>
 <summary>下载提示与文件后缀</summary>
@@ -50,7 +52,7 @@
 
 ### 按键云朵
 
-**1.1.0 新增。** 输入一个字符，手心上方就会出现一朵浅粉白色云朵。喇叭动作会将字符向外送出，带有扩音弧线，约一秒消失。
+输入一个字符，手心上方就会出现一朵浅粉白色云朵。喇叭动作会将字符向外送出，带有扩音弧线，约一秒消失。
 
 ![待机、奶茶、蛋糕和喇叭动作下的按键云朵](docs/media/key-cloud.png)
 
@@ -58,26 +60,60 @@
 
 ## 使用
 
+以下说明对应 **1.2.0 分支预览版**。已发布的 1.1.0 仍通过原有托盘菜单操作。
+
 ### 鼠标与托盘
 
 | 操作 | 功能 |
 | --- | --- |
 | 按住人物并用鼠标左键拖动 | 移动桌宠，可拖出屏幕四边 |
 | 按住人物上的鼠标右键＋滚轮 | 向上放大、向下缩小，从 1% 起持续放大 |
-| 点击或右键右下角托盘图标 | 选择全部表情、装扮、动作和设置 |
-| 托盘“显示 / 恢复操作”或 `Ctrl + Alt + P` | 找回人物并关闭点击穿透 |
-| 托盘“恢复 100% 大小并找回桌宠” | 重置大小并将人物带回屏幕 |
-| 托盘“退出桌宠” | 退出程序 |
+| 点击或右键右下角托盘图标 | 打开只有“设置”和“退出”两项的菜单 |
+| 托盘“设置” | 打开独立设置窗口，桌宠继续显示 |
+| 设置窗口底部“找回桌宠”或 `Ctrl + Alt + P` | 找回人物并关闭点击穿透 |
+| 设置窗口底部“恢复大小并找回” | 恢复 100% 大小并将人物带回屏幕 |
+| 托盘“退出” | 退出整个程序 |
 
-人物外的透明区域自动穿透，不妨碍操作后方窗口。普通滚轮不会缩放，鼠标经过或右键人物不会弹出设置面板。
+人物外的透明区域可直接点击后方窗口。普通滚轮不会缩放，右键人物也不会弹出设置窗口。
 
-托盘还可以开关目光跟随、头发与衣摆和腿部摆动、始终置顶、整个人物点击穿透，以及两种全局快捷键。位置、大小和偏好会自动保存。
+新版使用透明底粉色托盘图标。位置、大小和偏好会自动保存。
+
+### 设置窗口
+
+**1.2.0 新增独立设置窗口。** 设置和人物可以同时显示，窗口可单独移动、调整大小。拖动顶部空白处移动窗口，右上角三个标准图标分别是最小化、最大化／还原和关闭。关闭设置窗口后，桌宠会继续运行。
+
+<table>
+  <tr><th>外观</th><th>动画</th><th>桌面</th></tr>
+  <tr>
+    <td><a href="docs/media/settings-appearance.png"><img src="docs/media/settings-appearance.png" width="280" alt="外观设置：表情、装扮与动作"></a></td>
+    <td><a href="docs/media/settings-animation.png"><img src="docs/media/settings-animation.png" width="280" alt="动画设置：目光跟随、摆动与按键云朵"></a></td>
+    <td><a href="docs/media/settings-desktop.png"><img src="docs/media/settings-desktop.png" width="280" alt="桌面设置：大小、任务栏层级与快捷键"></a></td>
+  </tr>
+</table>
+
+点击截图可查看大图。
+
+- **外观：** 选择表情、猫猫和眼镜装扮、四种动作。快捷键切换后，窗口也会同步更新。
+- **动画：** 开关目光跟随、摆动和按键云朵；用滑块或数值框调节下表参数，也可一键恢复默认。
+- **桌面：** 调整人物大小、置顶、任务栏前后顺序、鼠标穿透和快捷键。大小支持直接输入百分比，从 1% 起，没有固定的放大上限。
+
+| 动画参数 | 范围 | 默认值 |
+| --- | --- | --- |
+| 眼睛跟随幅度 | 0–200% | 100% |
+| 摆动幅度 | 0–200% | 100% |
+| 摆动速度 | 0.25–3× | 1× |
+
+眼睛跟随默认保持原版效果，0% 关闭形变，200% 增强效果。摆动保持上下同向，幅度为 0% 时停止；关闭再开启对应开关会保留参数。
+
+开启“始终置顶”后，可选择“任务栏在前”或“桌宠在前”，默认桌宠在前。即使人物开启鼠标穿透，设置窗口仍可操作，底部按钮可以随时找回人物。
 
 ### 按键云朵
 
-抬起的手心正上方会显示一朵圆润的浅粉白色云朵，每次只显示最近按下的一个字符。支持 `0–9`、`a–z`、`A–Z`、英文标点与符号；空格显示为 `␣`。Shift 和 Caps Lock 决定字母大小写，Shift 也会切换对应符号。
+每次只显示最近输入的一个字符，支持 `0–9`、`a–z`、`A–Z`、英文标点与符号；空格显示为 `␣`。大小写和符号遵循 Shift 与 Caps Lock。
 
-Enter、Ctrl、Tab、方向键等功能键不显示，Ctrl／Alt／Win 快捷组合也不显示。连续输入直接替换前一个字符，最后一次输入后约 1 秒内消失。待机、吃蛋糕和喝奶茶时，云朵在手上方短暂停留后淡出；喇叭动作时，字符从喇叭口朝左上方飘出，并在 1 秒内逐渐淡出，附带手绘扩音弧线（仅图像效果）。可从托盘开关“按键云朵”，不影响原来的表情快捷键。按键仅用于即时显示，不记录或保存输入内容。
+Enter、Ctrl、Tab、方向键等功能键，以及 Ctrl／Alt／Win 快捷组合不显示。连续输入会替换前一个字符，约一秒消失。普通动作的云朵在手心上方淡出，喇叭动作则向左上方飘出并带有扩音弧线，不播放声音。
+
+可在“动画”页开关按键云朵，不影响表情快捷键。输入仅用于即时显示，不记录或保存。
 
 ### 表情快捷键
 
@@ -103,14 +139,14 @@ Enter、Ctrl、Tab、方向键等功能键不显示，Ctrl／Alt／Win 快捷组
 | 空格＋F6 | 喝奶茶 | 选择动作 |
 | 空格＋Backspace | 全部重置 | 默认脸、日常待机、关闭猫猫与眼镜 |
 
-空格组合键在其他窗口中也可用，并且不会拦截其他软件的按键输入。可在托盘关闭空格组合键，或开启备用的 **Ctrl＋Alt＋对应数字／F 键／Backspace**。全部功能也能直接从托盘菜单选择。
+空格组合键在其他窗口中也可用，并且不会拦截其他软件的按键输入。可在设置窗口的“桌面”页关闭空格组合键，或开启备用的 **Ctrl＋Alt＋对应数字／F 键／Backspace**。表情、装扮和动作也能在“外观”页直接选择。
 
 ## 源码运行
 
-需要 **Windows、Node.js 22 或更新版本**。浏览器视觉检查还需要 Microsoft Edge。
+需要 **Windows、Node.js 22 或更新版本**。克隆 `version-control` 分支即可运行 1.2.0 预览版；浏览器视觉检查还需要 Microsoft Edge。
 
 ```powershell
-git clone https://github.com/ActorF/Elysia_desktop_pet.git
+git clone --branch version-control https://github.com/ActorF/Elysia_desktop_pet.git
 cd Elysia_desktop_pet
 npm ci
 npm start
@@ -124,19 +160,21 @@ npm run test:smoke
 npm run test:visual
 npm run test:faces
 npm run test:zoom
+npm run test:settings
 npm run make:portable
 node scripts/verify-package.cjs
 ```
 
-便携版生成在 `release/`。`npm run package` 可生成未封装的应用目录；`npm run preview:expressions` 和 `npm run preview:motion` 可生成表情截图与待机录像。`node scripts/key-cloud-preview.cjs` 生成按键云朵展示图。更多检查见[验证说明](docs/verification.md)。
+构建后生成 `release/Elysia_desktop_pet-1.2.0.exe`。`npm run package` 可生成未封装的应用目录，更多检查见[验证说明](docs/verification.md)。
 
 ## 项目结构
 
 | 目录或文件 | 内容 |
 | --- | --- |
-| `electron/` | 透明窗口、托盘、全局快捷键、拖动、缩放与设置保存 |
-| `renderer/` | 人物绘制、表情与动作组合、目光跟随和摆动 |
+| `electron/` | 透明人物窗口、独立设置窗口、托盘、全局快捷键、拖动、缩放与设置保存 |
+| `renderer/` | 人物绘制、表情与动作组合、目光跟随、摆动和设置界面 |
 | `assets/character/` | 桌宠运行所需的角色素材 |
+| `assets/ui/` | 托盘图标 |
 | `scripts/` | 启动、构建验证与预览工具 |
 | `tests/` | 自动测试 |
 | `docs/` | 角色预览与验证说明 |

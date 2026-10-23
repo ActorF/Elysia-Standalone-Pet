@@ -1,10 +1,11 @@
 'use strict';
 
 // Electron 43.8.0 implements moveTop() on Windows with SetWindowPos and
-// SWP_NOACTIVATE. Do not replace it with focus(), show(), or a native helper.
+// SWP_NOACTIVATE. Never replace it with focus() or show().
 // https://github.com/electron/electron/blob/v43.8.0/shell/browser/native_window_views.cc
 // https://www.electronjs.org/docs/latest/api/browser-window#winsetalwaysontopflag-level-relativelevel
 const TOPMOST_LEVEL = 'screen-saver';
+const BELOW_TASKBAR_LEVEL = 'floating';
 const REASSERT_INTERVAL_MS = 750;
 const controllers = new WeakMap();
 
@@ -27,11 +28,18 @@ function createTopmostController(window, options = {}) {
   const intervalMs = Number.isFinite(options.intervalMs)
     ? Math.max(500, Math.min(5000, options.intervalMs)) : REASSERT_INTERVAL_MS;
   let enabled = options.enabled !== false, disposed = false, timer = null, raising = false;
+  let taskbarInFront = options.taskbarInFront === true;
+  let taskbarOrderer = null, configuredLevel = null;
 
   const alive = () => !window.isDestroyed();
   const visible = () => alive() && window.isVisible() && !window.isMinimized();
+  const level = () => taskbarInFront ? BELOW_TASKBAR_LEVEL : TOPMOST_LEVEL;
   function stopTimer() {
     if (timer !== null) { cancel(timer); timer = null; }
+  }
+  function stopMaintenance() {
+    stopTimer();
+    taskbarOrderer?.stop();
   }
   function report(error) {
     if (!alive()) { dispose(); return; }
@@ -40,7 +48,7 @@ function createTopmostController(window, options = {}) {
   function refresh() {
     if (disposed) return false;
     if (!alive()) { dispose(); return false; }
-    if (!enabled || !visible()) { stopTimer(); return false; }
+    if (!enabled || !visible()) { stopMaintenance(); return false; }
     if (timer === null) {
       timer = schedule(refresh, intervalMs);
       timer?.unref?.();
@@ -48,11 +56,19 @@ function createTopmostController(window, options = {}) {
     if (raising) return false;
     raising = true;
     try {
-      // 'floating' intentionally places Windows windows behind the taskbar.
-      // This supported level avoids that placement; moveTop restores ordering
-      // within the native topmost group after another app has risen above us.
-      window.setAlwaysOnTop(true, TOPMOST_LEVEL);
-      if (!disposed && enabled && visible()) window.moveTop();
+      // Electron's floating level only handles Shell_TrayWnd. Once our helper
+      // is ready it maintains order behind primary AND secondary taskbars.
+      // Reapplying floating every tick would move us above a secondary bar.
+      const targetLevel = level();
+      if (!taskbarInFront || configuredLevel !== targetLevel || !taskbarOrderer?.running) {
+        window.setAlwaysOnTop(true, targetLevel);
+        configuredLevel = targetLevel;
+      }
+      if (taskbarInFront) taskbarOrderer?.start();
+      else {
+        taskbarOrderer?.stop();
+        if (!disposed && enabled && visible()) window.moveTop();
+      }
       return !disposed && enabled;
     } catch (error) {
       report(error);
@@ -65,7 +81,7 @@ function createTopmostController(window, options = {}) {
     // toggles observable even in a hidden smoke-test window. moveTop includes
     // SWP_SHOWWINDOW internally, so only refresh's visible guard may call it.
     if (!visible()) {
-      try { window.setAlwaysOnTop(true, TOPMOST_LEVEL); } catch (error) { report(error); }
+      try { window.setAlwaysOnTop(true, level()); configuredLevel = level(); } catch (error) { report(error); }
     }
     refresh();
   }
@@ -75,27 +91,47 @@ function createTopmostController(window, options = {}) {
     if (enabled === next) return;
     enabled = next;
     if (enabled) { enable(); return; }
-    stopTimer();
+    configuredLevel = null;
+    stopMaintenance();
     if (alive()) {
       try { window.setAlwaysOnTop(false); } catch (error) { report(error); }
     }
   }
+  function setTaskbarInFront(value) {
+    if (disposed) return;
+    const next = value === true;
+    if (taskbarInFront === next) return;
+    taskbarInFront = next;
+    if (enabled) enable();
+  }
   function dispose() {
     if (disposed) return;
-    disposed = true; enabled = false; stopTimer();
-    for (const event of ['show', 'restore', 'blur', 'leave-full-screen']) window.removeListener(event, refresh);
-    for (const event of ['hide', 'minimize']) window.removeListener(event, stopTimer);
+    disposed = true; enabled = false; stopTimer(); taskbarOrderer?.dispose();
+    for (const event of ['show', 'restore', 'focus', 'blur', 'leave-full-screen']) window.removeListener(event, refresh);
+    for (const event of ['hide', 'minimize']) window.removeListener(event, stopMaintenance);
     window.removeListener('closed', dispose);
     controllers.delete(window);
     if (alive()) {
       try { window.setAlwaysOnTop(false); } catch (error) { options.onError?.(error); }
     }
   }
-  const controller = { setEnabled, refresh, dispose, get enabled() { return enabled; }, get disposed() { return disposed; } };
+  const controller = { setEnabled, setTaskbarInFront, refresh, dispose,
+    get enabled() { return enabled; }, get taskbarInFront() { return taskbarInFront; }, get disposed() { return disposed; } };
   controllers.set(window, controller);
   if (!alive()) { dispose(); return controller; }
-  for (const event of ['show', 'restore', 'blur', 'leave-full-screen']) window.on(event, refresh);
-  for (const event of ['hide', 'minimize']) window.on(event, stopTimer);
+  if (typeof window.getNativeWindowHandle === 'function' && (options.platform ?? process.platform) === 'win32') {
+    const createOrderer = options.createTaskbarOrderer ?? require('./taskbar-order.cjs').createTaskbarOrderer;
+    taskbarOrderer = createOrderer(window, { onError: report, onStopped() {
+      // A helper can finish one native operation while it is being stopped.
+      // Reapply the CURRENT policy after exit, never the mode it started with.
+      if (disposed || !alive()) return;
+      configuredLevel = null;
+      if (enabled) enable();
+      else { try { window.setAlwaysOnTop(false); } catch (error) { report(error); } }
+    } });
+  }
+  for (const event of ['show', 'restore', 'focus', 'blur', 'leave-full-screen']) window.on(event, refresh);
+  for (const event of ['hide', 'minimize']) window.on(event, stopMaintenance);
   window.once('closed', dispose);
   if (enabled) enable();
   else {
@@ -104,4 +140,4 @@ function createTopmostController(window, options = {}) {
   return controller;
 }
 
-module.exports = { createTopmostController, TOPMOST_LEVEL, REASSERT_INTERVAL_MS };
+module.exports = { createTopmostController, TOPMOST_LEVEL, BELOW_TASKBAR_LEVEL, REASSERT_INTERVAL_MS };
